@@ -1,137 +1,71 @@
-
 from __future__ import annotations
-
-import csv
-import html
-import io
-import time
+import html, time
 from typing import Any
-
 import streamlit as st
+from levli_logic import parse_finviz_csv, screen_rows
+from technical import technical_check
 
-from levli_logic import parse_finviz_csv, screen_rows, result_row, diagnostic_row
+st.set_page_config(page_title="Levli Finviz v0.2", page_icon="⭐", layout="wide")
 
-st.set_page_config(page_title="Levli Finviz", page_icon="⭐", layout="wide")
-
-def fmt(v: Any, digits: int = 2) -> str:
-    if v is None:
-        return "—"
-    if isinstance(v, float):
-        return f"{v:.{digits}f}"
+def fmt(v: Any) -> str:
+    if v is None: return "—"
+    if isinstance(v,float): return f"{v:.2f}"
     return str(v)
 
-def render_html_table(rows: list[dict[str, Any]], columns: list[str]) -> None:
+def table(rows, cols):
     if not rows:
-        st.info("אין נתונים להצגה.")
-        return
-    head = "".join(f"<th>{html.escape(c)}</th>" for c in columns)
-    body = []
-    for row in rows:
-        cells = "".join(f"<td>{html.escape(fmt(row.get(c)))}</td>" for c in columns)
-        body.append(f"<tr>{cells}</tr>")
-    st.markdown(
-        f"""
-        <div style="overflow-x:auto;width:100%">
-          <table style="border-collapse:collapse;width:100%;font-size:14px">
-            <thead><tr>{head}</tr></thead>
-            <tbody>{''.join(body)}</tbody>
-          </table>
-        </div>
-        <style>
-        table th, table td {{border:1px solid #ddd;padding:7px;text-align:left;white-space:nowrap}}
-        table th {{background:#f3f4f6;color:#111;position:sticky;top:0}}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+        st.info("אין נתונים להצגה."); return
+    head="".join(f"<th>{html.escape(c)}</th>" for c in cols)
+    body="".join("<tr>"+"".join(f"<td>{html.escape(fmt(r.get(c)))}</td>" for c in cols)+"</tr>" for r in rows)
+    st.markdown(f"""<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:14px">
+    <thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>
+    <style>table th,table td{{border:1px solid #ddd;padding:7px;white-space:nowrap}}table th{{background:#f3f4f6;color:#111}}</style>""", unsafe_allow_html=True)
 
-st.title("Levli — Finviz Test")
-st.caption("Fundamental Quality Filter")
+def saved_key():
+    try: return str(st.secrets.get("FMP_API_KEY","")).strip()
+    except Exception: return ""
 
-st.info(
-    "גרסת ניסיון נפרדת מ־FMP. היא קוראת Export של Finviz Custom, "
-    "מסננת לפי חוקי Levli ומחשבת Levli Score בכוכבים."
-)
+st.title("Levli — Finviz v0.2")
+st.caption("Finviz fundamentals + technical validation")
+uploaded=st.file_uploader("העלה Finviz Custom CSV",type=["csv"],accept_multiple_files=True)
+fmp_key=st.sidebar.text_input("FMP API Key — טכני בלבד",value=saved_key(),type="password")
+touch=st.sidebar.slider("נגיעה ב-MA50: עד % מתחת לממוצע",0.0,5.0,2.0,0.5)
+trend_days=st.sidebar.slider("MA50 עולה לעומת כמה ימי מסחר אחורה",10,40,20,5)
+if not uploaded: st.stop()
 
-uploaded = st.file_uploader(
-    "העלה קובץ CSV מ־Finviz",
-    type=["csv"],
-    accept_multiple_files=True,
-    help="אפשר להעלות קובץ אחד או כמה קבצי Export. המערכת מאחדת ומסירה כפילויות לפי Ticker.",
-)
-
-confirmed_sma50 = st.checkbox(
-    "אני מאשר שה־Export נוצר מ־Preset של Finviz עם Price above SMA50",
-    value=True,
-)
-
-if not uploaded:
-    st.stop()
-
-if not confirmed_sma50:
-    st.warning("Levli דורש Price > MA50. יש להפעיל ב־Finviz את Price above SMA50 לפני ה־Export.")
-    st.stop()
-
-started = time.perf_counter()
-all_rows: list[dict[str, Any]] = []
-source_files = 0
-
+rows=[]
 for f in uploaded:
-    raw = f.getvalue().decode("utf-8-sig", errors="replace")
-    rows = parse_finviz_csv(raw)
-    all_rows.extend(rows)
-    source_files += 1
+    rows += parse_finviz_csv(f.getvalue().decode("utf-8-sig",errors="replace"))
+rows=list({r["Ticker"]:r for r in rows if r.get("Ticker")}.values())
+fund_passed,fund_failed=screen_rows(rows)
+a,b,c=st.columns(3)
+a.metric("ניירות ב-Finviz",len(rows)); b.metric("עברו פונדמנטלי",len(fund_passed)); c.metric("נפסלו פונדמנטלי",len(fund_failed))
+st.info("הבדיקה הטכנית רצה רק על המניות שעברו פונדמנטלית: מגמת עלייה חודשית ~2 שנים, MA50 יומי עולה, ומחיר נוגע/מעל MA50.")
 
-# dedupe
-dedup: dict[str, dict[str, Any]] = {}
-for row in all_rows:
-    ticker = str(row.get("Ticker", "")).strip().upper()
-    if ticker:
-        dedup[ticker] = row
+if not fmp_key:
+    st.warning("הזן FMP API Key בצד שמאל. הוא משמש רק להיסטוריית מחיר של המועמדות."); st.stop()
 
-rows = list(dedup.values())
-passed, failed = screen_rows(rows)
-elapsed = time.perf_counter() - started
-
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("ניירות בקובץ", len(rows))
-m2.metric("עברו פונדמנטלי", len(passed))
-m3.metric("נפסלו", len(failed))
-m4.metric("זמן עיבוד", f"{elapsed:.2f} שנ׳")
-
-st.caption(
-    "הערה: MA50 Rising עדיין לא נאכף בגרסה זו. הוא נשאר תנאי חובה ב־Levli "
-    "ויוסף בשלב החיבור הטכני; לא הסרנו אותו מספר החוקים."
-)
-
-st.subheader("מניות שעברו את הסינון הפונדמנטלי")
-passed_out = [result_row(r) for r in passed]
-columns = [
-    "Ticker","Company","Levli Score","P/E","Forward P/E","P/S","P/S Status",
-    "Quick Ratio","ROE %","ROIC %","Gross Margin %","Profit Margin %",
-    "EPS Growth %","Forward EPS Growth %","Growth Status","Price"
-]
-render_html_table(passed_out, columns)
-
-# CSV download of passed results
-buf = io.StringIO()
-writer = csv.DictWriter(buf, fieldnames=columns)
-writer.writeheader()
-for row in passed_out:
-    writer.writerow({k: row.get(k) for k in columns})
-
-st.download_button(
-    "הורד תוצאות CSV",
-    data=buf.getvalue().encode("utf-8-sig"),
-    file_name="levli_finviz_passed.csv",
-    mime="text/csv",
-)
-
-with st.expander("מניות שנפסלו והסיבה", expanded=False):
-    failed_out = [diagnostic_row(r) for r in failed]
-    render_html_table(
-        failed_out,
-        ["Ticker","Company","Failed Criteria"]
-    )
-
-st.caption("Levli אינו המלצת השקעה. זהו מסנן פונדמנטלי למחקר נוסף.")
+limit=st.sidebar.slider("מספר מועמדות לבדיקה טכנית",1,min(50,max(1,len(fund_passed))),min(10,max(1,len(fund_passed))))
+if st.button("בדוק מגמה טכנית",type="primary"):
+    good=[]; bad=[]; unavailable=[]
+    progress=st.progress(0); status=st.empty(); start=time.perf_counter()
+    for i,row in enumerate(fund_passed[:limit],1):
+        status.info(f"בודק {row['Ticker']} ({i}/{limit})")
+        try:
+            tech=technical_check(row["Ticker"],fmp_key,touch/100,trend_days)
+            merged={**row,**tech}
+            (good if tech["Technical Passed"] else bad).append(merged)
+        except Exception as e:
+            unavailable.append({"Ticker":row["Ticker"],"Status":str(e)})
+        progress.progress(i/limit)
+        time.sleep(0.4)
+    status.empty()
+    x1,x2,x3,x4=st.columns(4)
+    x1.metric("נבדקו",limit); x2.metric("עברו הכול",len(good)); x3.metric("נפסלו טכנית",len(bad)); x4.metric("זמן",f"{time.perf_counter()-start:.1f} שנ׳")
+    st.subheader("מניות שעברו Levli")
+    table(good,["Ticker","Company","Levli Score","Price","MA50","MA50 Prior","Price vs MA50 %","2Y Monthly Trend","P/E","Forward P/E","ROE %","ROIC %"])
+    with st.expander("נפסלו טכנית והסיבה"):
+        table(bad,["Ticker","Company","Price","MA50","MA50 Prior","Price vs MA50 %","2Y Monthly Trend","Technical Failed Criteria"])
+    if unavailable:
+        with st.expander("Data unavailable"):
+            table(unavailable,["Ticker","Status"])
