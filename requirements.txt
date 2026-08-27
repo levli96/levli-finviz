@@ -1,1 +1,1 @@
-streamlit>=1.42,<2\nrequests>=2.31,<3\n
+streamlit>=1.42,<2
