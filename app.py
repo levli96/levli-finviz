@@ -7,8 +7,9 @@ import streamlit as st
 
 from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
 from technical_yahoo import screen_tickers
+from yahoo_diagnostic import test_yahoo
 
-st.set_page_config(page_title="Levli — v0.5", page_icon="⭐", layout="wide")
+st.set_page_config(page_title="Levli — v0.5.1", page_icon="⭐", layout="wide")
 
 
 def fmt(v: Any) -> str:
@@ -37,13 +38,27 @@ def table(rows: list[dict[str, Any]], cols: list[str]) -> None:
     )
 
 
-st.title("Levli — v0.5")
-st.caption("Finviz fundamentals → Yahoo monthly history → true MA50 Monthly trend (~24 months) → Levli Score")
+st.title("Levli — v0.5.1")
+st.caption("Yahoo diagnostic → Finviz fundamentals → MA50 Monthly trend (~24 months) → Levli Score")
 
 st.info(
     "v0.5 מורידה אוטומטית מ-Yahoo היסטוריית מחיר חודשית רק למניות שעברו את הסינון הפונדמנטלי. "
     "היא מחשבת MA50 חודשי אמיתי ובודקת את המגמה שלו ב-24 נקודות חודשיות אחרונות."
 )
+
+st.subheader("בדיקת חיבור Yahoo — AAPL")
+if st.button("בדוק Yahoo עם AAPL"):
+    with st.spinner("בודק חיבור ישיר ל-Yahoo..."):
+        diag = test_yahoo("AAPL")
+    st.session_state["yahoo_diag"] = diag
+
+if "yahoo_diag" in st.session_state:
+    diag = st.session_state["yahoo_diag"]
+    if diag.get("rows", 0) > 0 and diag.get("close_points", 0) > 0:
+        st.success(f"Yahoo עובד: התקבלו {diag.get('rows')} שורות עבור AAPL.")
+    else:
+        st.error("Yahoo לא החזיר נתוני AAPL. פרטי האבחון מופיעים למטה.")
+    st.json(diag)
 
 uploaded = st.file_uploader("העלה Finviz Custom CSV", type=["csv"], accept_multiple_files=True)
 if not uploaded:
