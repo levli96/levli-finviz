@@ -6,10 +6,9 @@ from typing import Any
 import streamlit as st
 
 from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
-from technical_yahoo import screen_tickers
-from yahoo_diagnostic import test_yahoo
+from technical_twelvedata import screen_tickers, test_connection
 
-st.set_page_config(page_title="Levli — v0.5.1", page_icon="⭐", layout="wide")
+st.set_page_config(page_title="Levli — v0.6", page_icon="⭐", layout="wide")
 
 
 def fmt(v: Any) -> str:
@@ -38,26 +37,33 @@ def table(rows: list[dict[str, Any]], cols: list[str]) -> None:
     )
 
 
-st.title("Levli — v0.5.1")
-st.caption("Yahoo diagnostic → Finviz fundamentals → MA50 Monthly trend (~24 months) → Levli Score")
+def get_api_key() -> str:
+    try:
+        return str(st.secrets.get("TWELVE_DATA_API_KEY", "")).strip()
+    except Exception:
+        return ""
 
+
+st.title("Levli — v0.6")
+st.caption("Finviz fundamentals → Twelve Data monthly history → true MA50 Monthly trend (~24 months) → Levli Score")
 st.info(
-    "v0.5 מורידה אוטומטית מ-Yahoo היסטוריית מחיר חודשית רק למניות שעברו את הסינון הפונדמנטלי. "
-    "היא מחשבת MA50 חודשי אמיתי ובודקת את המגמה שלו ב-24 נקודות חודשיות אחרונות."
+    "v0.6 מחליפה את Yahoo ב-Twelve Data. הסינון הפונדמנטלי וכללי MA50 של Levli לא השתנו. "
+    "ה-API key נקרא רק מ-Streamlit Secrets ואינו נשמר בקוד."
 )
 
-st.subheader("בדיקת חיבור Yahoo — AAPL")
-if st.button("בדוק Yahoo עם AAPL"):
-    with st.spinner("בודק חיבור ישיר ל-Yahoo..."):
-        diag = test_yahoo("AAPL")
-    st.session_state["yahoo_diag"] = diag
+api_key = get_api_key()
+st.subheader("בדיקת חיבור Twelve Data — AAPL")
+if st.button("בדוק Twelve Data עם AAPL"):
+    with st.spinner("בודק חיבור ל-Twelve Data…"):
+        diag = test_connection(api_key, "AAPL")
+    st.session_state["td_diag"] = diag
 
-if "yahoo_diag" in st.session_state:
-    diag = st.session_state["yahoo_diag"]
-    if diag.get("rows", 0) > 0 and diag.get("close_points", 0) > 0:
-        st.success(f"Yahoo עובד: התקבלו {diag.get('rows')} שורות עבור AAPL.")
+if "td_diag" in st.session_state:
+    diag = st.session_state["td_diag"]
+    if diag.get("ok"):
+        st.success(f"Twelve Data עובד: התקבלו {diag.get('points')} נקודות חודשיות עבור AAPL.")
     else:
-        st.error("Yahoo לא החזיר נתוני AAPL. פרטי האבחון מופיעים למטה.")
+        st.error(f"בדיקת Twelve Data נכשלה: {diag.get('error', 'שגיאה לא ידועה')}")
     st.json(diag)
 
 uploaded = st.file_uploader("העלה Finviz Custom CSV", type=["csv"], accept_multiple_files=True)
@@ -82,13 +88,42 @@ m3.metric("נפסלו פונדמנטלית", len(fund_failed))
 
 st.subheader("בדיקת MA50 Monthly אוטומטית")
 st.caption(
-    "הגדרת v0.5 למגמה ברורה: MA50 היום גבוה מתחילת חלון 24 החודשים, שיפוע לינארי חיובי, "
+    "מגמה ברורה ב-v0.6: MA50 היום גבוה מתחילת חלון 24 החודשים, שיפוע לינארי חיובי, "
     "ולפחות 18 מתוך 23 השינויים החודשיים ב-MA50 אינם שליליים. בנוסף המחיר החודשי האחרון חייב להיות מעל/נוגע ב-MA50."
 )
 
-if st.button("הרץ בדיקת Yahoo + MA50 Monthly", type="primary"):
-    with st.spinner("מוריד נתונים חודשיים מ-Yahoo ומחשב MA50..."):
-        tech, error = screen_tickers([r["Ticker"] for r in fund_passed])
+credits = 8
+try:
+    credits = max(1, int(st.secrets.get("TWELVE_DATA_CREDITS_PER_MINUTE", 8)))
+except Exception:
+    credits = 8
+
+estimated_minutes = max(0, (len(fund_passed) - 1) // credits)
+st.warning(
+    f"מכסת Twelve Data מוגדרת ל-{credits} מניות בדקה. עבור {len(fund_passed)} מועמדות, "
+    f"סריקה מלאה עשויה לקחת בערך {estimated_minutes} דקות. אל תסגור את החלון בזמן הסריקה."
+)
+
+if st.button("הרץ בדיקת Twelve Data + MA50 Monthly", type="primary"):
+    if not api_key:
+        st.error("TWELVE_DATA_API_KEY לא נמצא ב-Streamlit Secrets.")
+        st.stop()
+
+    progress_bar = st.progress(0)
+    status_box = st.empty()
+
+    def update_progress(done: int, total: int, msg: str) -> None:
+        pct = 0 if total <= 0 else min(100, int(done / total * 100))
+        progress_bar.progress(pct)
+        status_box.info(msg)
+
+    with st.spinner("מוריד נתונים חודשיים ומחשב MA50…"):
+        tech, error = screen_tickers(
+            [r["Ticker"] for r in fund_passed],
+            api_key=api_key,
+            credits_per_minute=credits,
+            progress=update_progress,
+        )
 
     if error:
         st.error(error)
@@ -97,9 +132,11 @@ if st.button("הרץ בדיקת Yahoo + MA50 Monthly", type="primary"):
     passed, failed, no_data = [], [], []
     for row in fund_passed:
         t = row["Ticker"]
-        info = tech.get(t)
-        if not info:
-            info = {"Technical Pass": False, "Technical Status": "לא התקבלו נתונים מ-Yahoo"}
+        info = tech.get(t) or {
+            "Technical Pass": False,
+            "Technical Status": "לא התקבלו נתונים מ-Twelve Data",
+            "Monthly Points": 0,
+        }
         merged = {**row, **info}
         if not info.get("Monthly Points"):
             no_data.append(merged)
@@ -108,14 +145,16 @@ if st.button("הרץ בדיקת Yahoo + MA50 Monthly", type="primary"):
         else:
             failed.append(merged)
 
-    st.session_state["tech_results"] = (passed, failed, no_data)
+    st.session_state["tech_results_v06"] = (passed, failed, no_data)
+    progress_bar.progress(100)
+    status_box.success("בדיקת Twelve Data הסתיימה.")
 
-if "tech_results" in st.session_state:
-    passed, failed, no_data = st.session_state["tech_results"]
+if "tech_results_v06" in st.session_state:
+    passed, failed, no_data = st.session_state["tech_results_v06"]
     a, b, c = st.columns(3)
     a.metric("עברו Levli", len(passed))
     b.metric("נפסלו טכנית", len(failed))
-    c.metric("ללא נתוני Yahoo", len(no_data))
+    c.metric("ללא נתוני Twelve Data", len(no_data))
 
     st.subheader("⭐ עברו Levli")
     final_rows = []
@@ -134,13 +173,13 @@ if "tech_results" in st.session_state:
         table(failed, ["Ticker", "Company", "Technical Status", "Monthly Points", "MA50 Start", "MA50 Now", "MA50 Change %", "MA50 Up Months", "Monthly Close"])
 
     if no_data:
-        with st.expander("לא התקבלו מספיק נתונים מ-Yahoo"):
+        with st.expander("לא התקבלו מספיק נתונים מ-Twelve Data"):
             table(no_data, ["Ticker", "Company", "Technical Status", "Monthly Points"])
 
 with st.expander("נפסלו פונדמנטלית והסיבה"):
     table([diagnostic_row(r) for r in fund_failed], ["Ticker", "Company", "Failed Criteria"])
 
 st.caption(
-    "מקור המחירים הטכניים: Yahoo Finance באמצעות yfinance. Finviz נשאר מקור הסינון הפונדמנטלי. "
-    "אין צורך ב-API key נוסף."
+    "מקור המחירים הטכניים: Twelve Data. Finviz נשאר מקור הסינון הפונדמנטלי. "
+    "המפתח נשמר ב-Streamlit Secrets בלבד."
 )
