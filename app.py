@@ -1,23 +1,14 @@
-
 from __future__ import annotations
 
-import csv
 import html
-import io
 from typing import Any
 
 import streamlit as st
 
-from levli_logic import (
-    diagnostic_row,
-    history_filter,
-    parse_approved_tickers,
-    parse_finviz_csv,
-    result_row,
-    screen_rows,
-)
+from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
+from technical_yahoo import screen_tickers
 
-st.set_page_config(page_title="Levli — Finviz v0.4", page_icon="⭐", layout="wide")
+st.set_page_config(page_title="Levli — v0.5", page_icon="⭐", layout="wide")
 
 
 def fmt(v: Any) -> str:
@@ -38,23 +29,20 @@ def table(rows: list[dict[str, Any]], cols: list[str]) -> None:
         for r in rows
     )
     st.markdown(
-        f"""<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:14px">
+        f'''<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:14px">
         <thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>
-        <style>
-        table th,table td{{border:1px solid #ddd;padding:7px;white-space:nowrap}}
-        table th{{background:#f3f4f6;color:#111}}
-        </style>""",
+        <style>table th,table td{{border:1px solid #ddd;padding:7px;white-space:nowrap}}
+        table th{{background:#f3f4f6;color:#111}}</style>''',
         unsafe_allow_html=True,
     )
 
 
-st.title("Levli — Finviz v0.4")
-st.caption("Finviz Only — 2Y history floor → Fundamentals → Monthly Uptrend approval → Levli Score")
+st.title("Levli — v0.5")
+st.caption("Finviz fundamentals → Yahoo monthly history → true MA50 Monthly trend (~24 months) → Levli Score")
 
 st.info(
-    "v0.4 לא מציגה מניה כ'עברה Levli' בלי אישור מגמת Monthly. "
-    "בנוסף, מניה עם פחות משנתיים מאז ה-IPO נפסלת אוטומטית. "
-    "כדי שזה יעבוד, ה-Finviz Custom Export חייב לכלול גם את העמודה IPO Date."
+    "v0.5 מורידה אוטומטית מ-Yahoo היסטוריית מחיר חודשית רק למניות שעברו את הסינון הפונדמנטלי. "
+    "היא מחשבת MA50 חודשי אמיתי ובודקת את המגמה שלו ב-24 נקודות חודשיות אחרונות."
 )
 
 uploaded = st.file_uploader("העלה Finviz Custom CSV", type=["csv"], accept_multiple_files=True)
@@ -67,102 +55,77 @@ try:
         rows += parse_finviz_csv(f.getvalue().decode("utf-8-sig", errors="replace"))
 except ValueError as exc:
     st.error(str(exc))
-    st.warning("ב-Finviz: Custom → Customize → הוסף IPO Date → Export מחדש.")
     st.stop()
 
 rows = list({r["Ticker"]: r for r in rows if r.get("Ticker")}.values())
+fund_passed, fund_failed = screen_rows(rows)
 
-history_ok, history_failed = history_filter(rows)
-fund_passed, fund_failed = screen_rows(history_ok)
-
-m1, m2, m3, m4 = st.columns(4)
+m1, m2, m3 = st.columns(3)
 m1.metric("ניירות שנקלטו", len(rows))
-m2.metric("נפסלו: פחות מ-2Y", len(history_failed))
-m3.metric("עברו היסטוריה + פונדמנטל", len(fund_passed))
-m4.metric("נפסלו פונדמנטלית", len(fund_failed))
+m2.metric("עברו פונדמנטלי", len(fund_passed))
+m3.metric("נפסלו פונדמנטלית", len(fund_failed))
 
-st.subheader("מועמדות לבדיקה בגרף Monthly")
+st.subheader("בדיקת MA50 Monthly אוטומטית")
 st.caption(
-    "אלה עדיין לא 'עברו Levli'. צריך לאשר ב-Finviz שהגרף החודשי מציג מגמת עלייה מובהקת "
-    "עם SMA50 לאורך לפחות שנתיים."
+    "הגדרת v0.5 למגמה ברורה: MA50 היום גבוה מתחילת חלון 24 החודשים, שיפוע לינארי חיובי, "
+    "ולפחות 18 מתוך 23 השינויים החודשיים ב-MA50 אינם שליליים. בנוסף המחיר החודשי האחרון חייב להיות מעל/נוגע ב-MA50."
 )
 
-candidate_rows = [result_row(r) for r in fund_passed]
-table(
-    candidate_rows,
-    [
-        "Ticker", "Company", "IPO Date", "History Years", "Levli Score",
-        "P/E", "Forward P/E", "P/S", "Quick Ratio", "ROE %", "ROIC %",
-        "Gross Margin %", "Profit Margin %", "EPS Growth %",
-        "Forward EPS Growth %", "Price",
-    ],
-)
+if st.button("הרץ בדיקת Yahoo + MA50 Monthly", type="primary"):
+    with st.spinner("מוריד נתונים חודשיים מ-Yahoo ומחשב MA50..."):
+        tech, error = screen_tickers([r["Ticker"] for r in fund_passed])
 
-candidate_csv = io.StringIO()
-candidate_cols = ["Ticker", "Company", "IPO Date", "History Years"]
-writer = csv.DictWriter(candidate_csv, fieldnames=candidate_cols)
-writer.writeheader()
-for row in candidate_rows:
-    writer.writerow({k: row.get(k) for k in candidate_cols})
+    if error:
+        st.error(error)
+        st.stop()
 
-st.download_button(
-    "הורד רשימת מועמדות לבדיקה ב-Finviz Charts",
-    data=candidate_csv.getvalue().encode("utf-8-sig"),
-    file_name="levli_monthly_review_candidates.csv",
-    mime="text/csv",
-)
+    passed, failed, no_data = [], [], []
+    for row in fund_passed:
+        t = row["Ticker"]
+        info = tech.get(t)
+        if not info:
+            info = {"Technical Pass": False, "Technical Status": "לא התקבלו נתונים מ-Yahoo"}
+        merged = {**row, **info}
+        if not info.get("Monthly Points"):
+            no_data.append(merged)
+        elif info.get("Technical Pass"):
+            passed.append(merged)
+        else:
+            failed.append(merged)
 
-st.divider()
-st.subheader("אישור מגמת Monthly")
+    st.session_state["tech_results"] = (passed, failed, no_data)
 
-approved_text = st.text_area(
-    "הדבק כאן Tick​​ers שאישרת בגרף Monthly",
-    placeholder="לדוגמה: NVDA, MSFT, PLTR",
-    help="אפשר להפריד בפסיקים, רווחים או שורות.",
-)
+if "tech_results" in st.session_state:
+    passed, failed, no_data = st.session_state["tech_results"]
+    a, b, c = st.columns(3)
+    a.metric("עברו Levli", len(passed))
+    b.metric("נפסלו טכנית", len(failed))
+    c.metric("ללא נתוני Yahoo", len(no_data))
 
-approved = parse_approved_tickers(approved_text)
-candidate_map = {r["Ticker"]: r for r in fund_passed}
+    st.subheader("⭐ עברו Levli")
+    final_rows = []
+    for r in passed:
+        x = result_row(r)
+        x.update({k: r.get(k) for k in ["MA50 Start", "MA50 Now", "MA50 Change %", "MA50 Up Months", "Monthly Close", "Technical Status"]})
+        final_rows.append(x)
+    table(final_rows, [
+        "Ticker", "Company", "Levli Score", "MA50 Start", "MA50 Now", "MA50 Change %",
+        "MA50 Up Months", "Monthly Close", "P/E", "Forward P/E", "P/S", "Quick Ratio",
+        "ROE %", "ROIC %", "Gross Margin %", "Profit Margin %", "EPS Growth %",
+        "Forward EPS Growth %", "Growth Status",
+    ])
 
-if not approved:
-    st.warning(
-        "עדיין אין רשימת 'עברו Levli'. "
-        "הדבק כאן רק מניות שבדקת ב-Finviz Monthly ושיש להן מגמת עלייה מובהקת עם SMA50."
-    )
-else:
-    final_rows = [candidate_map[t] for t in approved if t in candidate_map]
-    ignored = sorted(approved - set(candidate_map))
+    with st.expander("נפסלו בבדיקת MA50 Monthly"):
+        table(failed, ["Ticker", "Company", "Technical Status", "Monthly Points", "MA50 Start", "MA50 Now", "MA50 Change %", "MA50 Up Months", "Monthly Close"])
 
-    st.success(f"עברו Levli: {len(final_rows)} מניות.")
-    if ignored:
-        st.info(
-            "Tickers שלא נכנסו כי אינם ברשימת המועמדות לאחר היסטוריה/פונדמנטל: "
-            + ", ".join(ignored)
-        )
-
-    table(
-        [result_row(r) for r in final_rows],
-        [
-            "Ticker", "Company", "IPO Date", "History Years", "Levli Score",
-            "P/E", "Forward P/E", "P/S", "P/S Status", "Quick Ratio",
-            "ROE %", "ROIC %", "Gross Margin %", "Profit Margin %",
-            "EPS Growth %", "Forward EPS Growth %", "Growth Status", "Price",
-        ],
-    )
-
-with st.expander("נפסלו בגלל פחות משנתיים היסטוריה"):
-    table(
-        [diagnostic_row(r, history_reason=True) for r in history_failed],
-        ["Ticker", "Company", "IPO Date", "History Years", "Failed Criteria"],
-    )
+    if no_data:
+        with st.expander("לא התקבלו מספיק נתונים מ-Yahoo"):
+            table(no_data, ["Ticker", "Company", "Technical Status", "Monthly Points"])
 
 with st.expander("נפסלו פונדמנטלית והסיבה"):
-    table(
-        [diagnostic_row(r) for r in fund_failed],
-        ["Ticker", "Company", "IPO Date", "History Years", "Failed Criteria"],
-    )
+    table([diagnostic_row(r) for r in fund_failed], ["Ticker", "Company", "Failed Criteria"])
 
 st.caption(
-    "חשוב: Finviz אינו מספק דרך Export היסטוריית מחיר גולמית שמאפשרת ל-Levli לחשב בעצמה "
-    "את שיפוע SMA50 החודשי לאורך שנתיים. לכן v0.4 מונעת תוצאה מטעה: בלי אישור Monthly אין 'עברו Levli'."
+    "מקור המחירים הטכניים: Yahoo Finance באמצעות yfinance. Finviz נשאר מקור הסינון הפונדמנטלי. "
+    "אין צורך ב-API key נוסף."
 )
