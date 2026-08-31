@@ -8,10 +8,19 @@ import numpy as np
 import pandas as pd
 import requests
 
+# Monthly stage
 MA_MONTHS = 50
 TREND_MONTHS = 24
 MIN_UP_MONTHS = 18
-OUTPUTSIZE = 80  # enough for a 50-month MA plus a 24-month trend window
+MONTHLY_OUTPUTSIZE = 80
+
+# Daily stage
+DAILY_SMA_DAYS = 50
+DAILY_TREND_DAYS = 252  # approximately one trading year
+DAILY_OUTPUTSIZE = 330  # 50-day SMA warm-up + one-year analysis window + margin
+MIN_DAILY_CROSSINGS = 5
+CROSS_CONFIRM_DAYS = 2
+
 API_URL = "https://api.twelvedata.com/time_series"
 
 
@@ -69,6 +78,99 @@ def analyze_monthly_ma50(close: pd.Series) -> dict[str, Any]:
     }
 
 
+def _confirmed_crossings(diff: pd.Series, confirm_days: int = CROSS_CONFIRM_DAYS) -> int:
+    """Count confirmed price/SMA crossings.
+
+    A side change is counted only after `confirm_days` consecutive closes on the
+    new side of SMA50. This avoids counting a one-day touch/noise as a crossing.
+    Equality is treated as above/touching the SMA50.
+    """
+    diff = pd.to_numeric(diff, errors="coerce").dropna()
+    if len(diff) < confirm_days:
+        return 0
+
+    above = diff >= 0
+    last_state: bool | None = None
+    crossings = 0
+
+    for i in range(confirm_days - 1, len(above)):
+        window = above.iloc[i - confirm_days + 1 : i + 1]
+        if bool(window.all()):
+            state = True
+        elif bool((~window).all()):
+            state = False
+        else:
+            continue
+
+        if last_state is None:
+            last_state = state
+        elif state != last_state:
+            crossings += 1
+            last_state = state
+
+    return crossings
+
+
+def analyze_daily_sma50(close: pd.Series) -> dict[str, Any]:
+    close = pd.to_numeric(close, errors="coerce").dropna().sort_index()
+    sma50 = close.rolling(DAILY_SMA_DAYS, min_periods=DAILY_SMA_DAYS).mean()
+    frame = pd.DataFrame({"Close": close, "SMA50": sma50}).dropna()
+
+    if len(frame) < DAILY_TREND_DAYS:
+        return {
+            "Daily Pass": False,
+            "Daily Status": "אין מספיק היסטוריה ל-SMA50 יומי + כשנת מסחר אחת",
+            "Daily Points": int(len(close)),
+            "Daily SMA50 Start": None,
+            "Daily SMA50 Now": None,
+            "Daily SMA50 Change %": None,
+            "Daily Close": float(close.iloc[-1]) if len(close) else None,
+            "Daily Distance %": None,
+            "Daily Crossings": None,
+            "Days Above SMA50 %": None,
+        }
+
+    trend = frame.iloc[-DAILY_TREND_DAYS:].copy()
+    sma = trend["SMA50"]
+    x = np.arange(len(sma), dtype=float)
+    slope = float(np.polyfit(x, sma.to_numpy(dtype=float), 1)[0])
+    start = float(sma.iloc[0])
+    now = float(sma.iloc[-1])
+    last_close = float(trend["Close"].iloc[-1])
+    change_pct = ((now / start) - 1.0) * 100.0 if start else None
+    distance_pct = ((last_close / now) - 1.0) * 100.0 if now else None
+    diff = trend["Close"] - trend["SMA50"]
+    crossings = _confirmed_crossings(diff)
+    days_above_pct = float((diff >= 0).mean() * 100.0)
+
+    trend_ok = now > start and slope > 0
+    price_ok = last_close >= now
+    crossings_ok = crossings >= MIN_DAILY_CROSSINGS
+    passed = trend_ok and price_ok and crossings_ok
+
+    if not trend_ok:
+        status = "SMA50 יומי אינו במגמת עלייה לאורך ~שנת מסחר"
+    elif not price_ok:
+        status = "SMA50 היומי עולה, אך המחיר הנוכחי מתחת ל-SMA50"
+    elif not crossings_ok:
+        status = f"פחות מ-{MIN_DAILY_CROSSINGS} חציות מאושרות של המחיר מול SMA50 בשנה"
+    else:
+        status = f"עבר: SMA50 יומי עולה ~שנה, המחיר מעל/נוגע בו, ו-{crossings} חציות מאושרות"
+
+    return {
+        "Daily Pass": passed,
+        "Daily Status": status,
+        "Daily Points": int(len(close)),
+        "Daily SMA50 Start": start,
+        "Daily SMA50 Now": now,
+        "Daily SMA50 Change %": change_pct,
+        "Daily Close": last_close,
+        "Daily Distance %": distance_pct,
+        "Daily Crossings": crossings,
+        "Days Above SMA50 %": days_above_pct,
+    }
+
+
 def _series_from_payload(payload: dict[str, Any]) -> pd.Series:
     if not isinstance(payload, dict):
         return pd.Series(dtype="float64")
@@ -105,7 +207,7 @@ def test_connection(api_key: str, ticker: str = "AAPL") -> dict[str, Any]:
     params = {
         "symbol": td_symbol(ticker),
         "interval": "1month",
-        "outputsize": OUTPUTSIZE,
+        "outputsize": MONTHLY_OUTPUTSIZE,
         "format": "JSON",
         "apikey": api_key,
     }
@@ -130,13 +232,18 @@ def test_connection(api_key: str, ticker: str = "AAPL") -> dict[str, Any]:
     return {"ok": False, "ticker": ticker, "points": 0, "error": _error_message(payload, r.status_code)}
 
 
-def _fetch_batch(api_key: str, originals: list[str]) -> tuple[dict[str, pd.Series], str | None, bool]:
+def _fetch_batch(
+    api_key: str,
+    originals: list[str],
+    interval: str,
+    outputsize: int,
+) -> tuple[dict[str, pd.Series], str | None, bool]:
     mapping = {t: td_symbol(t) for t in originals}
     symbols = list(dict.fromkeys(mapping.values()))
     params = {
         "symbol": ",".join(symbols),
-        "interval": "1month",
-        "outputsize": OUTPUTSIZE,
+        "interval": interval,
+        "outputsize": outputsize,
         "format": "JSON",
         "apikey": api_key,
     }
@@ -148,7 +255,6 @@ def _fetch_batch(api_key: str, originals: list[str]) -> tuple[dict[str, pd.Serie
     except ValueError:
         return {}, "Twelve Data החזיר תשובה שאינה JSON", False
 
-    # 429: caller may wait for quota reset and retry once.
     if r.status_code == 429:
         return {}, _error_message(payload, r.status_code), True
 
@@ -159,7 +265,6 @@ def _fetch_batch(api_key: str, originals: list[str]) -> tuple[dict[str, pd.Serie
             return out, _error_message(payload, r.status_code), False
         return out, None, False
 
-    # Multi-symbol response is keyed by symbol.
     for original, sym in mapping.items():
         sub = payload.get(sym, {}) if isinstance(payload, dict) else {}
         out[original] = _series_from_payload(sub)
@@ -169,16 +274,16 @@ def _fetch_batch(api_key: str, originals: list[str]) -> tuple[dict[str, pd.Serie
     return out, None, False
 
 
-def screen_tickers(
+def _screen_tickers_generic(
     tickers: list[str],
     api_key: str,
+    interval: str,
+    outputsize: int,
+    analyzer: Callable[[pd.Series], dict[str, Any]],
+    empty_result: dict[str, Any],
     credits_per_minute: int = 8,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], str | None]:
-    """Fetch monthly prices in Twelve Data batches, respecting the user's per-minute credit limit.
-
-    Basic/free defaults to 8 credits/minute. Each /time_series symbol costs 1 credit.
-    """
     clean = list(dict.fromkeys(t.strip().upper() for t in tickers if t and t.strip()))
     if not clean:
         return {}, None
@@ -194,33 +299,20 @@ def screen_tickers(
         if progress:
             progress(bi, total_batches, f"מוריד קבוצה {bi + 1}/{total_batches} ({len(batch)} מניות)")
 
-        series_map, err, rate_limited = _fetch_batch(api_key, batch)
+        series_map, err, rate_limited = _fetch_batch(api_key, batch, interval, outputsize)
         if rate_limited:
             if progress:
                 progress(bi, total_batches, "ממתין לאיפוס מכסת Twelve Data…")
             time.sleep(61)
-            series_map, err, rate_limited = _fetch_batch(api_key, batch)
+            series_map, err, rate_limited = _fetch_batch(api_key, batch, interval, outputsize)
 
         if err and not series_map:
             return results, f"Twelve Data: {err}"
 
         for ticker in batch:
             close = series_map.get(ticker, pd.Series(dtype="float64"))
-            if len(close):
-                results[ticker] = analyze_monthly_ma50(close)
-            else:
-                results[ticker] = {
-                    "Technical Pass": False,
-                    "Technical Status": "לא התקבלו נתוני מחיר מ-Twelve Data",
-                    "Monthly Points": 0,
-                    "MA50 Start": None,
-                    "MA50 Now": None,
-                    "MA50 Change %": None,
-                    "MA50 Up Months": None,
-                    "Monthly Close": None,
-                }
+            results[ticker] = analyzer(close) if len(close) else dict(empty_result)
 
-        # On Basic/free, wait for the next minute before consuming another full quota.
         if bi < total_batches - 1:
             if progress:
                 progress(bi + 1, total_batches, "ממתין למכסה של הדקה הבאה…")
@@ -229,3 +321,61 @@ def screen_tickers(
     if progress:
         progress(total_batches, total_batches, "הבדיקה הסתיימה")
     return results, None
+
+
+def screen_tickers(
+    tickers: list[str],
+    api_key: str,
+    credits_per_minute: int = 8,
+    progress: Callable[[int, int, str], None] | None = None,
+) -> tuple[dict[str, dict[str, Any]], str | None]:
+    """Monthly Levli stage."""
+    return _screen_tickers_generic(
+        tickers=tickers,
+        api_key=api_key,
+        interval="1month",
+        outputsize=MONTHLY_OUTPUTSIZE,
+        analyzer=analyze_monthly_ma50,
+        empty_result={
+            "Technical Pass": False,
+            "Technical Status": "לא התקבלו נתוני מחיר מ-Twelve Data",
+            "Monthly Points": 0,
+            "MA50 Start": None,
+            "MA50 Now": None,
+            "MA50 Change %": None,
+            "MA50 Up Months": None,
+            "Monthly Close": None,
+        },
+        credits_per_minute=credits_per_minute,
+        progress=progress,
+    )
+
+
+def screen_daily_tickers(
+    tickers: list[str],
+    api_key: str,
+    credits_per_minute: int = 8,
+    progress: Callable[[int, int, str], None] | None = None,
+) -> tuple[dict[str, dict[str, Any]], str | None]:
+    """Daily Levli stage: rising SMA50 over ~1 trading year + current price >= SMA50 + >=5 confirmed crossings."""
+    return _screen_tickers_generic(
+        tickers=tickers,
+        api_key=api_key,
+        interval="1day",
+        outputsize=DAILY_OUTPUTSIZE,
+        analyzer=analyze_daily_sma50,
+        empty_result={
+            "Daily Pass": False,
+            "Daily Status": "לא התקבלו נתונים יומיים מ-Twelve Data",
+            "Daily Points": 0,
+            "Daily SMA50 Start": None,
+            "Daily SMA50 Now": None,
+            "Daily SMA50 Change %": None,
+            "Daily Close": None,
+            "Daily Distance %": None,
+            "Daily Crossings": None,
+            "Days Above SMA50 %": None,
+        },
+        credits_per_minute=credits_per_minute,
+        progress=progress,
+    )

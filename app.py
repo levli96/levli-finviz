@@ -6,9 +6,9 @@ from typing import Any
 import streamlit as st
 
 from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
-from technical_twelvedata import screen_tickers, test_connection
+from technical_twelvedata import screen_daily_tickers, screen_tickers, test_connection
 
-st.set_page_config(page_title="Levli — v0.6", page_icon="⭐", layout="wide")
+st.set_page_config(page_title="Levli — v0.7", page_icon="⭐", layout="wide")
 
 
 def fmt(v: Any) -> str:
@@ -44,14 +44,24 @@ def get_api_key() -> str:
         return ""
 
 
-st.title("Levli — v0.6")
-st.caption("Finviz fundamentals → Twelve Data monthly history → true MA50 Monthly trend (~24 months) → Levli Score")
+def get_credits() -> int:
+    try:
+        return max(1, int(st.secrets.get("TWELVE_DATA_CREDITS_PER_MINUTE", 8)))
+    except Exception:
+        return 8
+
+
+st.title("Levli — v0.7")
+st.caption("Finviz fundamentals → MA50 Monthly (~24m) → SMA50 Daily (~1y + crossings) → Levli Score")
 st.info(
-    "v0.6 מחליפה את Yahoo ב-Twelve Data. הסינון הפונדמנטלי וכללי MA50 של Levli לא השתנו. "
-    "ה-API key נקרא רק מ-Streamlit Secrets ואינו נשמר בקוד."
+    "v0.7 מוסיפה שלב יומי רק למניות שעברו את הסינון החודשי. "
+    "השלב היומי בודק SMA50 עולה לאורך כשנת מסחר, מחיר נוכחי מעל/נוגע ב-SMA50, "
+    "ולפחות 5 חציות מאושרות של המחיר מול SMA50."
 )
 
 api_key = get_api_key()
+credits = get_credits()
+
 st.subheader("בדיקת חיבור Twelve Data — AAPL")
 if st.button("בדוק Twelve Data עם AAPL"):
     with st.spinner("בודק חיבור ל-Twelve Data…"):
@@ -86,25 +96,20 @@ m1.metric("ניירות שנקלטו", len(rows))
 m2.metric("עברו פונדמנטלי", len(fund_passed))
 m3.metric("נפסלו פונדמנטלית", len(fund_failed))
 
-st.subheader("בדיקת MA50 Monthly אוטומטית")
+# ---------------- Monthly stage ----------------
+st.subheader("שלב 1 — MA50 Monthly")
 st.caption(
-    "מגמה ברורה ב-v0.6: MA50 היום גבוה מתחילת חלון 24 החודשים, שיפוע לינארי חיובי, "
-    "ולפחות 18 מתוך 23 השינויים החודשיים ב-MA50 אינם שליליים. בנוסף המחיר החודשי האחרון חייב להיות מעל/נוגע ב-MA50."
+    "MA50 היום גבוה מתחילת חלון 24 החודשים, שיפוע לינארי חיובי, לפחות 18 מתוך 23 השינויים "
+    "החודשיים ב-MA50 אינם שליליים, והמחיר החודשי האחרון מעל/נוגע ב-MA50."
 )
 
-credits = 8
-try:
-    credits = max(1, int(st.secrets.get("TWELVE_DATA_CREDITS_PER_MINUTE", 8)))
-except Exception:
-    credits = 8
-
-estimated_minutes = max(0, (len(fund_passed) - 1) // credits)
+monthly_est = max(0, (len(fund_passed) - 1) // credits)
 st.warning(
     f"מכסת Twelve Data מוגדרת ל-{credits} מניות בדקה. עבור {len(fund_passed)} מועמדות, "
-    f"סריקה מלאה עשויה לקחת בערך {estimated_minutes} דקות. אל תסגור את החלון בזמן הסריקה."
+    f"השלב החודשי עשוי לקחת בערך {monthly_est} דקות."
 )
 
-if st.button("הרץ בדיקת Twelve Data + MA50 Monthly", type="primary"):
+if st.button("הרץ שלב 1 — Twelve Data + MA50 Monthly", type="primary"):
     if not api_key:
         st.error("TWELVE_DATA_API_KEY לא נמצא ב-Streamlit Secrets.")
         st.stop()
@@ -112,7 +117,7 @@ if st.button("הרץ בדיקת Twelve Data + MA50 Monthly", type="primary"):
     progress_bar = st.progress(0)
     status_box = st.empty()
 
-    def update_progress(done: int, total: int, msg: str) -> None:
+    def update_monthly(done: int, total: int, msg: str) -> None:
         pct = 0 if total <= 0 else min(100, int(done / total * 100))
         progress_bar.progress(pct)
         status_box.info(msg)
@@ -122,14 +127,14 @@ if st.button("הרץ בדיקת Twelve Data + MA50 Monthly", type="primary"):
             [r["Ticker"] for r in fund_passed],
             api_key=api_key,
             credits_per_minute=credits,
-            progress=update_progress,
+            progress=update_monthly,
         )
 
     if error:
         st.error(error)
         st.stop()
 
-    passed, failed, no_data = [], [], []
+    monthly_passed, monthly_failed, monthly_no_data = [], [], []
     for row in fund_passed:
         t = row["Ticker"]
         info = tech.get(t) or {
@@ -139,42 +144,138 @@ if st.button("הרץ בדיקת Twelve Data + MA50 Monthly", type="primary"):
         }
         merged = {**row, **info}
         if not info.get("Monthly Points"):
-            no_data.append(merged)
+            monthly_no_data.append(merged)
         elif info.get("Technical Pass"):
-            passed.append(merged)
+            monthly_passed.append(merged)
         else:
-            failed.append(merged)
+            monthly_failed.append(merged)
 
-    st.session_state["tech_results_v06"] = (passed, failed, no_data)
+    st.session_state["monthly_results_v07"] = (monthly_passed, monthly_failed, monthly_no_data)
+    st.session_state.pop("daily_results_v07", None)
     progress_bar.progress(100)
-    status_box.success("בדיקת Twelve Data הסתיימה.")
+    status_box.success("שלב 1 הסתיים.")
 
-if "tech_results_v06" in st.session_state:
-    passed, failed, no_data = st.session_state["tech_results_v06"]
+if "monthly_results_v07" in st.session_state:
+    monthly_passed, monthly_failed, monthly_no_data = st.session_state["monthly_results_v07"]
     a, b, c = st.columns(3)
-    a.metric("עברו Levli", len(passed))
-    b.metric("נפסלו טכנית", len(failed))
-    c.metric("ללא נתוני Twelve Data", len(no_data))
+    a.metric("עברו Monthly", len(monthly_passed))
+    b.metric("נפסלו Monthly", len(monthly_failed))
+    c.metric("ללא נתונים חודשיים", len(monthly_no_data))
 
-    st.subheader("⭐ עברו Levli")
-    final_rows = []
-    for r in passed:
-        x = result_row(r)
-        x.update({k: r.get(k) for k in ["MA50 Start", "MA50 Now", "MA50 Change %", "MA50 Up Months", "Monthly Close", "Technical Status"]})
-        final_rows.append(x)
-    table(final_rows, [
-        "Ticker", "Company", "Levli Score", "MA50 Start", "MA50 Now", "MA50 Change %",
-        "MA50 Up Months", "Monthly Close", "P/E", "Forward P/E", "P/S", "Quick Ratio",
-        "ROE %", "ROIC %", "Gross Margin %", "Profit Margin %", "EPS Growth %",
-        "Forward EPS Growth %", "Growth Status",
-    ])
+    with st.expander("הצג את המניות שעברו Monthly"):
+        table(monthly_passed, [
+            "Ticker", "Company", "MA50 Start", "MA50 Now", "MA50 Change %",
+            "MA50 Up Months", "Monthly Close", "Technical Status",
+        ])
 
-    with st.expander("נפסלו בבדיקת MA50 Monthly"):
-        table(failed, ["Ticker", "Company", "Technical Status", "Monthly Points", "MA50 Start", "MA50 Now", "MA50 Change %", "MA50 Up Months", "Monthly Close"])
+    # ---------------- Daily stage ----------------
+    st.subheader("שלב 2 — SMA50 Daily")
+    st.caption(
+        "נבדקות רק המניות שעברו Monthly. החלון הוא כ-252 ימי מסחר. "
+        "SMA50 חייב להיות גבוה יותר מאשר בתחילת החלון ובשיפוע לינארי חיובי; "
+        "המחיר הנוכחי חייב להיות מעל/נוגע ב-SMA50; ונדרשות לפחות 5 חציות מאושרות. "
+        "חציה נספרת רק אחרי 2 ימי מסחר רצופים בצד החדש של SMA50 כדי לצמצם רעש."
+    )
 
-    if no_data:
-        with st.expander("לא התקבלו מספיק נתונים מ-Twelve Data"):
-            table(no_data, ["Ticker", "Company", "Technical Status", "Monthly Points"])
+    daily_est = max(0, (len(monthly_passed) - 1) // credits)
+    st.warning(
+        f"שלב Daily ירוץ על {len(monthly_passed)} מניות בלבד. במכסה של {credits} מניות בדקה, "
+        f"הוא עשוי לקחת בערך {daily_est} דקות."
+    )
+
+    if st.button("הרץ שלב 2 — SMA50 Daily + לפחות 5 חציות", type="primary"):
+        progress_bar_d = st.progress(0)
+        status_box_d = st.empty()
+
+        def update_daily(done: int, total: int, msg: str) -> None:
+            pct = 0 if total <= 0 else min(100, int(done / total * 100))
+            progress_bar_d.progress(pct)
+            status_box_d.info(msg)
+
+        with st.spinner("מוריד נתונים יומיים ומחשב SMA50…"):
+            daily_tech, error = screen_daily_tickers(
+                [r["Ticker"] for r in monthly_passed],
+                api_key=api_key,
+                credits_per_minute=credits,
+                progress=update_daily,
+            )
+
+        if error:
+            st.error(error)
+            st.stop()
+
+        final_passed, daily_failed, daily_no_data = [], [], []
+        for row in monthly_passed:
+            t = row["Ticker"]
+            info = daily_tech.get(t) or {
+                "Daily Pass": False,
+                "Daily Status": "לא התקבלו נתונים יומיים מ-Twelve Data",
+                "Daily Points": 0,
+            }
+            merged = {**row, **info}
+            if not info.get("Daily Points"):
+                daily_no_data.append(merged)
+            elif info.get("Daily Pass"):
+                final_passed.append(merged)
+            else:
+                daily_failed.append(merged)
+
+        st.session_state["daily_results_v07"] = (final_passed, daily_failed, daily_no_data)
+        progress_bar_d.progress(100)
+        status_box_d.success("שלב 2 הסתיים.")
+
+    if "daily_results_v07" in st.session_state:
+        final_passed, daily_failed, daily_no_data = st.session_state["daily_results_v07"]
+        x, y, z = st.columns(3)
+        x.metric("⭐ עברו Levli סופי", len(final_passed))
+        y.metric("נפסלו Daily", len(daily_failed))
+        z.metric("ללא נתונים יומיים", len(daily_no_data))
+
+        st.subheader("⭐ עברו Levli — Monthly + Daily")
+        final_rows = []
+        for r in final_passed:
+            out = result_row(r)
+            out.update({
+                "Daily SMA50 Now": r.get("Daily SMA50 Now"),
+                "Daily Close": r.get("Daily Close"),
+                "Daily Distance %": r.get("Daily Distance %"),
+                "Daily SMA50 Change %": r.get("Daily SMA50 Change %"),
+                "Daily Crossings": r.get("Daily Crossings"),
+                "Days Above SMA50 %": r.get("Days Above SMA50 %"),
+                "MA50 Change %": r.get("MA50 Change %"),
+                "MA50 Up Months": r.get("MA50 Up Months"),
+            })
+            final_rows.append(out)
+
+        table(final_rows, [
+            "Ticker", "Company", "Levli Score",
+            "Daily Close", "Daily SMA50 Now", "Daily Distance %", "Daily SMA50 Change %",
+            "Daily Crossings", "Days Above SMA50 %",
+            "MA50 Change %", "MA50 Up Months",
+            "P/E", "Forward P/E", "P/S", "Quick Ratio", "ROE %", "ROIC %",
+            "Gross Margin %", "Profit Margin %", "EPS Growth %", "Forward EPS Growth %", "Growth Status",
+        ])
+
+        with st.expander("נפסלו בשלב Daily והסיבה"):
+            table(daily_failed, [
+                "Ticker", "Company", "Daily Status", "Daily Points", "Daily SMA50 Start",
+                "Daily SMA50 Now", "Daily SMA50 Change %", "Daily Close", "Daily Distance %",
+                "Daily Crossings", "Days Above SMA50 %",
+            ])
+
+        if daily_no_data:
+            with st.expander("לא התקבלו מספיק נתונים יומיים מ-Twelve Data"):
+                table(daily_no_data, ["Ticker", "Company", "Daily Status", "Daily Points"])
+
+    with st.expander("נפסלו בשלב Monthly והסיבה"):
+        table(monthly_failed, [
+            "Ticker", "Company", "Technical Status", "Monthly Points", "MA50 Start", "MA50 Now",
+            "MA50 Change %", "MA50 Up Months", "Monthly Close",
+        ])
+
+    if monthly_no_data:
+        with st.expander("לא התקבלו מספיק נתונים חודשיים מ-Twelve Data"):
+            table(monthly_no_data, ["Ticker", "Company", "Technical Status", "Monthly Points"])
 
 with st.expander("נפסלו פונדמנטלית והסיבה"):
     table([diagnostic_row(r) for r in fund_failed], ["Ticker", "Company", "Failed Criteria"])
