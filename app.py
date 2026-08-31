@@ -8,7 +8,7 @@ import streamlit as st
 from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
 from technical_twelvedata import screen_daily_tickers, screen_tickers, test_connection
 
-st.set_page_config(page_title="Levli — v0.8", page_icon="⭐", layout="wide")
+st.set_page_config(page_title="Levli — v0.8.1", page_icon="⭐", layout="wide")
 
 
 def fmt(v: Any) -> str:
@@ -51,10 +51,10 @@ def get_credits() -> int:
         return 8
 
 
-st.title("Levli — v0.8")
+st.title("Levli — v0.8.1")
 st.caption("Finviz fundamentals → MA50 Monthly (~24m) → SMA50 Daily (~1y + crossings) → Levli Score")
 st.info(
-    "v0.8 מוסיפה Industry ומדרגת את הרשימה הסופית לפי Levli Score של 1–5 כוכבים. "
+    "v0.8.1 מוסיפה Industry ומדרגת את הרשימה הסופית לפי Levli Score של 1–5 כוכבים. "
     "כללי הסינון Monthly ו-Daily נשארו ללא שינוי; הנתונים הטכניים אינם משפיעים על מספר הכוכבים."
 )
 

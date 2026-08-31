@@ -4,7 +4,6 @@ from __future__ import annotations
 import csv
 import io
 import re
-from datetime import date, datetime
 from typing import Any, Optional
 
 MIN_QUICK_RATIO = 1.0
@@ -12,7 +11,6 @@ MIN_ROE = 12.0
 MIN_ROIC = 9.0
 MIN_GROSS_MARGIN = 38.0
 MIN_PROFIT_MARGIN = 7.0
-MIN_HISTORY_DAYS = 730
 
 EXCELLENT_ROE = 30.0
 EXCELLENT_GROSS_MARGIN = 45.0
@@ -50,26 +48,6 @@ def to_float(value: Any) -> Optional[float]:
         return None
 
 
-def parse_date(value: Any) -> Optional[date]:
-    if value in (None, "", "-", "N/A", "nan"):
-        return None
-    s = str(value).strip()
-    formats = (
-        "%Y-%m-%d",
-        "%m/%d/%Y",
-        "%d/%m/%Y",
-        "%b %d, %Y",
-        "%B %d, %Y",
-        "%b-%d-%Y",
-    )
-    for fmt in formats:
-        try:
-            return datetime.strptime(s, fmt).date()
-        except ValueError:
-            pass
-    return None
-
-
 def parse_finviz_csv(text: str) -> list[dict[str, Any]]:
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
@@ -79,24 +57,15 @@ def parse_finviz_csv(text: str) -> list[dict[str, Any]]:
         raise ValueError("חסרות עמודות ב־Finviz Export: " + ", ".join(missing))
 
     out: list[dict[str, Any]] = []
-    today = date.today()
-
     for raw in reader:
         ticker = str(raw.get("Ticker", "")).strip().upper()
         if not ticker:
             continue
 
-        ipo = parse_date(raw.get("IPO Date"))
-        history_days = (today - ipo).days if ipo else None
-        history_years = history_days / 365.25 if history_days is not None else None
-
         row = {
             "Ticker": ticker,
             "Company": str(raw.get("Company", "")).strip(),
             "Industry": str(raw.get("Industry", "")).strip() or "—",
-            "IPO Date": ipo.isoformat() if ipo else "—",
-            "History Days": history_days,
-            "History Years": history_years,
             "Price": to_float(raw.get("Price")),
             "P/E": to_float(raw.get("P/E")),
             "Forward P/E": to_float(raw.get("Forward P/E")),
@@ -115,21 +84,6 @@ def parse_finviz_csv(text: str) -> list[dict[str, Any]]:
         out.append(row)
 
     return out
-
-
-def history_filter(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    passed, failed = [], []
-    for row in rows:
-        ok = (
-            row.get("History Days") is not None
-            and row["History Days"] >= MIN_HISTORY_DAYS
-        )
-        row["_history_ok"] = ok
-        if ok:
-            passed.append(row)
-        else:
-            failed.append(row)
-    return passed, failed
 
 
 def ps_status(row: dict[str, Any]) -> str:
@@ -230,8 +184,6 @@ def result_row(row: dict[str, Any]) -> dict[str, Any]:
         "Ticker": row.get("Ticker"),
         "Company": row.get("Company"),
         "Industry": row.get("Industry"),
-        "IPO Date": row.get("IPO Date"),
-        "History Years": row.get("History Years"),
         "Levli Score": row.get("Levli Score"),
         "P/E": row.get("P/E"),
         "Forward P/E": row.get("Forward P/E"),
@@ -250,17 +202,12 @@ def result_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def diagnostic_row(row: dict[str, Any], history_reason: bool = False) -> dict[str, Any]:
-    if history_reason:
-        failed = ["פחות משנתיים היסטוריית מסחר / IPO Date חסר"]
-    else:
-        checks = row.get("_checks") or mandatory_checks(row)
-        failed = [name for name, passed in checks.items() if not passed]
+    checks = row.get("_checks") or mandatory_checks(row)
+    failed = [name for name, passed in checks.items() if not passed]
 
     return {
         "Ticker": row.get("Ticker"),
         "Company": row.get("Company"),
         "Industry": row.get("Industry"),
-        "IPO Date": row.get("IPO Date"),
-        "History Years": row.get("History Years"),
         "Failed Criteria": ", ".join(failed) if failed else "—",
     }
