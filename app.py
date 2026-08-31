@@ -8,7 +8,7 @@ import streamlit as st
 from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
 from technical_twelvedata import screen_daily_tickers, screen_tickers, test_connection
 
-st.set_page_config(page_title="Levli — v0.7.1 Diagnostic", page_icon="⭐", layout="wide")
+st.set_page_config(page_title="Levli — v0.8", page_icon="⭐", layout="wide")
 
 
 def fmt(v: Any) -> str:
@@ -51,12 +51,11 @@ def get_credits() -> int:
         return 8
 
 
-st.title("Levli — v0.7.1 Diagnostic")
+st.title("Levli — v0.8")
 st.caption("Finviz fundamentals → MA50 Monthly (~24m) → SMA50 Daily (~1y + crossings) → Levli Score")
 st.info(
-    "v0.7.1 היא גרסת אבחון לשלב היומי. כללי הסינון לא שונו. "
-    "השלב היומי בודק SMA50 עולה לאורך כשנת מסחר, מחיר נוכחי מעל/נוגע ב-SMA50, "
-    "ולפחות 5 חציות מאושרות של המחיר מול SMA50."
+    "v0.8 מוסיפה Industry ומדרגת את הרשימה הסופית לפי Levli Score של 1–5 כוכבים. "
+    "כללי הסינון Monthly ו-Daily נשארו ללא שינוי; הנתונים הטכניים אינם משפיעים על מספר הכוכבים."
 )
 
 api_key = get_api_key()
@@ -150,13 +149,13 @@ if st.button("הרץ שלב 1 — Twelve Data + MA50 Monthly", type="primary"):
         else:
             monthly_failed.append(merged)
 
-    st.session_state["monthly_results_v07"] = (monthly_passed, monthly_failed, monthly_no_data)
-    st.session_state.pop("daily_results_v07", None)
+    st.session_state["monthly_results_v08"] = (monthly_passed, monthly_failed, monthly_no_data)
+    st.session_state.pop("daily_results_v08", None)
     progress_bar.progress(100)
     status_box.success("שלב 1 הסתיים.")
 
-if "monthly_results_v07" in st.session_state:
-    monthly_passed, monthly_failed, monthly_no_data = st.session_state["monthly_results_v07"]
+if "monthly_results_v08" in st.session_state:
+    monthly_passed, monthly_failed, monthly_no_data = st.session_state["monthly_results_v08"]
     a, b, c = st.columns(3)
     a.metric("עברו Monthly", len(monthly_passed))
     b.metric("נפסלו Monthly", len(monthly_failed))
@@ -164,7 +163,7 @@ if "monthly_results_v07" in st.session_state:
 
     with st.expander("הצג את המניות שעברו Monthly"):
         table(monthly_passed, [
-            "Ticker", "Company", "MA50 Start", "MA50 Now", "MA50 Change %",
+            "Ticker", "Company", "Industry", "MA50 Start", "MA50 Now", "MA50 Change %",
             "MA50 Up Months", "Monthly Close", "Technical Status",
         ])
 
@@ -220,12 +219,12 @@ if "monthly_results_v07" in st.session_state:
             else:
                 daily_failed.append(merged)
 
-        st.session_state["daily_results_v07"] = (final_passed, daily_failed, daily_no_data)
+        st.session_state["daily_results_v08"] = (final_passed, daily_failed, daily_no_data)
         progress_bar_d.progress(100)
         status_box_d.success("שלב 2 הסתיים.")
 
-    if "daily_results_v07" in st.session_state:
-        final_passed, daily_failed, daily_no_data = st.session_state["daily_results_v07"]
+    if "daily_results_v08" in st.session_state:
+        final_passed, daily_failed, daily_no_data = st.session_state["daily_results_v08"]
         x, y, z = st.columns(3)
         x.metric("⭐ עברו Levli סופי", len(final_passed))
         y.metric("נפסלו Daily", len(daily_failed))
@@ -237,7 +236,7 @@ if "monthly_results_v07" in st.session_state:
             key=lambda r: (-(r.get("Daily Crossings") or -1), str(r.get("Ticker", ""))),
         )
         table(diagnostic_daily, [
-            "Ticker", "Company", "Daily Pass", "Daily Status", "Daily Points",
+            "Ticker", "Company", "Industry", "Daily Pass", "Daily Status", "Daily Points",
             "Daily SMA50 Start", "Daily SMA50 Now", "Daily SMA50 Change %",
             "Daily Close", "Daily Distance %", "Daily Crossings", "Days Above SMA50 %",
         ])
@@ -259,8 +258,13 @@ if "monthly_results_v07" in st.session_state:
             })
             final_rows.append(out)
 
+        final_rows.sort(
+            key=lambda r: (len(r.get("Levli Score", "")), str(r.get("Ticker", ""))),
+            reverse=True,
+        )
+
         table(final_rows, [
-            "Ticker", "Company", "Levli Score",
+            "Ticker", "Company", "Industry", "Levli Score",
             "Daily Close", "Daily SMA50 Now", "Daily Distance %", "Daily SMA50 Change %",
             "Daily Crossings", "Days Above SMA50 %",
             "MA50 Change %", "MA50 Up Months",
@@ -270,27 +274,27 @@ if "monthly_results_v07" in st.session_state:
 
         with st.expander("נפסלו בשלב Daily והסיבה"):
             table(daily_failed, [
-                "Ticker", "Company", "Daily Status", "Daily Points", "Daily SMA50 Start",
+                "Ticker", "Company", "Industry", "Daily Status", "Daily Points", "Daily SMA50 Start",
                 "Daily SMA50 Now", "Daily SMA50 Change %", "Daily Close", "Daily Distance %",
                 "Daily Crossings", "Days Above SMA50 %",
             ])
 
         if daily_no_data:
             with st.expander("לא התקבלו מספיק נתונים יומיים מ-Twelve Data"):
-                table(daily_no_data, ["Ticker", "Company", "Daily Status", "Daily Points"])
+                table(daily_no_data, ["Ticker", "Company", "Industry", "Daily Status", "Daily Points"])
 
     with st.expander("נפסלו בשלב Monthly והסיבה"):
         table(monthly_failed, [
-            "Ticker", "Company", "Technical Status", "Monthly Points", "MA50 Start", "MA50 Now",
+            "Ticker", "Company", "Industry", "Technical Status", "Monthly Points", "MA50 Start", "MA50 Now",
             "MA50 Change %", "MA50 Up Months", "Monthly Close",
         ])
 
     if monthly_no_data:
         with st.expander("לא התקבלו מספיק נתונים חודשיים מ-Twelve Data"):
-            table(monthly_no_data, ["Ticker", "Company", "Technical Status", "Monthly Points"])
+            table(monthly_no_data, ["Ticker", "Company", "Industry", "Technical Status", "Monthly Points"])
 
 with st.expander("נפסלו פונדמנטלית והסיבה"):
-    table([diagnostic_row(r) for r in fund_failed], ["Ticker", "Company", "Failed Criteria"])
+    table([diagnostic_row(r) for r in fund_failed], ["Ticker", "Company", "Industry", "Failed Criteria"])
 
 st.caption(
     "מקור המחירים הטכניים: Twelve Data. Finviz נשאר מקור הסינון הפונדמנטלי. "

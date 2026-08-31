@@ -23,7 +23,7 @@ REASONABLE_PS = 8.0
 REQUIRED_COLUMNS = {
     "Ticker",
     "Company",
-    "IPO Date",
+    "Industry",
     "Price",
     "P/E",
     "Forward P/E",
@@ -93,6 +93,7 @@ def parse_finviz_csv(text: str) -> list[dict[str, Any]]:
         row = {
             "Ticker": ticker,
             "Company": str(raw.get("Company", "")).strip(),
+            "Industry": str(raw.get("Industry", "")).strip() or "—",
             "IPO Date": ipo.isoformat() if ipo else "—",
             "History Days": history_days,
             "History Years": history_years,
@@ -188,13 +189,17 @@ def mandatory_checks(row: dict[str, Any]) -> dict[str, bool]:
 
 
 def levli_stars(row: dict[str, Any]) -> str:
+    """1–5 stars, based only on fundamental quality bonuses.
+
+    Monthly/Daily technical filters are pass/fail gates and do not affect the score.
+    """
     count = 0
     count += int((row.get("ROE %") or -999) > EXCELLENT_ROE)
     count += int((row.get("Gross Margin %") or -999) > EXCELLENT_GROSS_MARGIN)
     count += int((row.get("Profit Margin %") or -999) > EXCELLENT_PROFIT_MARGIN)
     count += int(row.get("P/S") is not None and row["P/S"] < CHEAP_PS)
     count += int(row.get("Growth Status") == "מצוין")
-    return "⭐" * max(count, 1)
+    return "⭐" * min(5, max(count, 1))
 
 
 def screen_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -224,6 +229,7 @@ def result_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "Ticker": row.get("Ticker"),
         "Company": row.get("Company"),
+        "Industry": row.get("Industry"),
         "IPO Date": row.get("IPO Date"),
         "History Years": row.get("History Years"),
         "Levli Score": row.get("Levli Score"),
@@ -253,6 +259,7 @@ def diagnostic_row(row: dict[str, Any], history_reason: bool = False) -> dict[st
     return {
         "Ticker": row.get("Ticker"),
         "Company": row.get("Company"),
+        "Industry": row.get("Industry"),
         "IPO Date": row.get("IPO Date"),
         "History Years": row.get("History Years"),
         "Failed Criteria": ", ".join(failed) if failed else "—",
