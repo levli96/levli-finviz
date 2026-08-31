@@ -8,7 +8,7 @@ import streamlit as st
 from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
 from technical_twelvedata import screen_daily_tickers, screen_tickers, test_connection
 
-st.set_page_config(page_title="Levli — v0.7", page_icon="⭐", layout="wide")
+st.set_page_config(page_title="Levli — v0.7.1 Diagnostic", page_icon="⭐", layout="wide")
 
 
 def fmt(v: Any) -> str:
@@ -51,10 +51,10 @@ def get_credits() -> int:
         return 8
 
 
-st.title("Levli — v0.7")
+st.title("Levli — v0.7.1 Diagnostic")
 st.caption("Finviz fundamentals → MA50 Monthly (~24m) → SMA50 Daily (~1y + crossings) → Levli Score")
 st.info(
-    "v0.7 מוסיפה שלב יומי רק למניות שעברו את הסינון החודשי. "
+    "v0.7.1 היא גרסת אבחון לשלב היומי. כללי הסינון לא שונו. "
     "השלב היומי בודק SMA50 עולה לאורך כשנת מסחר, מחיר נוכחי מעל/נוגע ב-SMA50, "
     "ולפחות 5 חציות מאושרות של המחיר מול SMA50."
 )
@@ -230,6 +230,18 @@ if "monthly_results_v07" in st.session_state:
         x.metric("⭐ עברו Levli סופי", len(final_passed))
         y.metric("נפסלו Daily", len(daily_failed))
         z.metric("ללא נתונים יומיים", len(daily_no_data))
+
+        st.subheader("אבחון שלב Daily — כל 87 המניות")
+        diagnostic_daily = sorted(
+            final_passed + daily_failed + daily_no_data,
+            key=lambda r: (-(r.get("Daily Crossings") or -1), str(r.get("Ticker", ""))),
+        )
+        table(diagnostic_daily, [
+            "Ticker", "Company", "Daily Pass", "Daily Status", "Daily Points",
+            "Daily SMA50 Start", "Daily SMA50 Now", "Daily SMA50 Change %",
+            "Daily Close", "Daily Distance %", "Daily Crossings", "Days Above SMA50 %",
+        ])
+        st.caption("טבלת האבחון מציגה גם מניות שנפסלו, כדי לראות בדיוק איזה תנאי הפיל כל מניה וכמה חציות נספרו.")
 
         st.subheader("⭐ עברו Levli — Monthly + Daily")
         final_rows = []
