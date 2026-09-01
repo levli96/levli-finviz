@@ -10,8 +10,7 @@ import streamlit as st
 from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
 from technical_twelvedata import screen_daily_tickers, screen_tickers, test_connection
 
-st.set_page_config(page_title="Levli — v0.8.2", page_icon="⭐", layout="wide")
-
+st.set_page_config(page_title="Levli Score v1.0", page_icon="⭐", layout="wide")
 STATE_FILE = Path("/tmp/levli_v082_state.json")
 
 
@@ -93,29 +92,17 @@ def get_credits() -> int:
         return 8
 
 
-st.title("Levli — v0.8.2")
+st.title("Levli Score v1.0")
 st.caption("Finviz fundamentals → MA50 Monthly (~24m) → SMA50 Daily (~1y + crossings) → Levli Score")
 st.info(
-    "v0.8.2 שומרת אוטומטית את תוצאות הסינון Monthly ו-Daily, כך שרענון/Reset לא מחייב להתחיל מחדש. "
+    "v1.0 שומרת אוטומטית את תוצאות הסינון Monthly ו-Daily, כך שרענון/Reset לא מחייב להתחיל מחדש. "
     "Industry וכללי הסינון נשארו ללא שינוי."
 )
 
 api_key = get_api_key()
 credits = get_credits()
 
-st.subheader("בדיקת חיבור Twelve Data — AAPL")
-if st.button("בדוק Twelve Data עם AAPL"):
-    with st.spinner("בודק חיבור ל-Twelve Data…"):
-        diag = test_connection(api_key, "AAPL")
-    st.session_state["td_diag"] = diag
 
-if "td_diag" in st.session_state:
-    diag = st.session_state["td_diag"]
-    if diag.get("ok"):
-        st.success(f"Twelve Data עובד: התקבלו {diag.get('points')} נקודות חודשיות עבור AAPL.")
-    else:
-        st.error(f"בדיקת Twelve Data נכשלה: {diag.get('error', 'שגיאה לא ידועה')}")
-    st.json(diag)
 
 restore_run_state()
 
