@@ -152,7 +152,6 @@ def levli_stars(row: dict[str, Any]) -> str:
     count += int((row.get("Gross Margin %") or -999) > EXCELLENT_GROSS_MARGIN)
     count += int((row.get("Profit Margin %") or -999) > EXCELLENT_PROFIT_MARGIN)
     count += int(row.get("P/S") is not None and row["P/S"] < CHEAP_PS)
-    count += int(row.get("Growth Status") == "מצוין")
     return "⭐" * min(5, max(count, 1))
 
 
