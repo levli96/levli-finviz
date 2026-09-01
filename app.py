@@ -9,7 +9,7 @@ import streamlit as st
 
 from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
 from technical_twelvedata import screen_daily_tickers, screen_tickers, test_connection
-
+from finviz_api import download_finviz_csv, FinvizAPIError
 st.set_page_config(page_title="Levli Score v1.0", page_icon="⭐", layout="wide")
 STATE_FILE = Path("/tmp/levli_v082_state.json")
 
@@ -105,7 +105,15 @@ credits = get_credits()
 
 
 restore_run_state()
-
+finviz_token = str(st.secrets.get("FINVIZ_API_TOKEN", "")).strip()
+finviz_export_url = str(st.secrets.get("FINVIZ_EXPORT_URL", "")).strip()
+use_auto_finviz = st.button("🚀 משוך סינון עדכני אוטומטית מ-Finviz")
+if use_auto_finviz:
+    try:
+        finviz_df = download_finviz_csv(finviz_export_url, finviz_token)
+        st.success(f"✅ Finviz חובר בהצלחה — התקבלו {len(finviz_df)} מניות")
+    except FinvizAPIError as exc:
+        st.error(str(exc))
 uploaded = st.file_uploader("העלה Finviz Custom CSV", type=["csv"], accept_multiple_files=True)
 
 if uploaded:
