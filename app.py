@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import html
+import json
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -8,8 +10,48 @@ import streamlit as st
 from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
 from technical_twelvedata import screen_daily_tickers, screen_tickers, test_connection
 
-st.set_page_config(page_title="Levli — v0.8.1", page_icon="⭐", layout="wide")
+st.set_page_config(page_title="Levli — v0.8.2", page_icon="⭐", layout="wide")
 
+STATE_FILE = Path("/tmp/levli_v082_state.json")
+
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    try:
+        return value.item()
+    except Exception:
+        return str(value)
+
+
+def save_run_state() -> None:
+    keys = [
+        "source_rows_v082", "fund_passed_v082", "fund_failed_v082",
+        "monthly_results_v08", "daily_results_v08",
+    ]
+    payload = {k: _json_safe(st.session_state[k]) for k in keys if k in st.session_state}
+    try:
+        STATE_FILE.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def restore_run_state() -> bool:
+    if not STATE_FILE.exists():
+        return False
+    try:
+        payload = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        for k, v in payload.items():
+            if k not in st.session_state:
+                st.session_state[k] = v
+        return bool(payload)
+    except Exception:
+        return False
 
 def fmt(v: Any) -> str:
     if v is None:
@@ -51,11 +93,11 @@ def get_credits() -> int:
         return 8
 
 
-st.title("Levli — v0.8.1")
+st.title("Levli — v0.8.2")
 st.caption("Finviz fundamentals → MA50 Monthly (~24m) → SMA50 Daily (~1y + crossings) → Levli Score")
 st.info(
-    "v0.8.1 מוסיפה Industry ומדרגת את הרשימה הסופית לפי Levli Score של 1–5 כוכבים. "
-    "כללי הסינון Monthly ו-Daily נשארו ללא שינוי; הנתונים הטכניים אינם משפיעים על מספר הכוכבים."
+    "v0.8.2 שומרת אוטומטית את תוצאות הסינון Monthly ו-Daily, כך שרענון/Reset לא מחייב להתחיל מחדש. "
+    "Industry וכללי הסינון נשארו ללא שינוי."
 )
 
 api_key = get_api_key()
@@ -75,20 +117,38 @@ if "td_diag" in st.session_state:
         st.error(f"בדיקת Twelve Data נכשלה: {diag.get('error', 'שגיאה לא ידועה')}")
     st.json(diag)
 
+restore_run_state()
+
 uploaded = st.file_uploader("העלה Finviz Custom CSV", type=["csv"], accept_multiple_files=True)
-if not uploaded:
-    st.stop()
 
-rows: list[dict[str, Any]] = []
-try:
-    for f in uploaded:
-        rows += parse_finviz_csv(f.getvalue().decode("utf-8-sig", errors="replace"))
-except ValueError as exc:
-    st.error(str(exc))
-    st.stop()
+if uploaded:
+    rows: list[dict[str, Any]] = []
+    try:
+        for f in uploaded:
+            rows += parse_finviz_csv(f.getvalue().decode("utf-8-sig", errors="replace"))
+    except ValueError as exc:
+        st.error(str(exc))
+        st.stop()
 
-rows = list({r["Ticker"]: r for r in rows if r.get("Ticker")}.values())
-fund_passed, fund_failed = screen_rows(rows)
+    rows = list({r["Ticker"]: r for r in rows if r.get("Ticker")}.values())
+    current_tickers = sorted(r["Ticker"] for r in rows)
+    previous_tickers = sorted(r["Ticker"] for r in st.session_state.get("source_rows_v082", []))
+    if current_tickers != previous_tickers:
+        st.session_state.pop("monthly_results_v08", None)
+        st.session_state.pop("daily_results_v08", None)
+
+    fund_passed, fund_failed = screen_rows(rows)
+    st.session_state["source_rows_v082"] = rows
+    st.session_state["fund_passed_v082"] = fund_passed
+    st.session_state["fund_failed_v082"] = fund_failed
+    save_run_state()
+else:
+    rows = st.session_state.get("source_rows_v082", [])
+    fund_passed = st.session_state.get("fund_passed_v082", [])
+    fund_failed = st.session_state.get("fund_failed_v082", [])
+    if not rows:
+        st.stop()
+    st.success("שוחזרה אוטומטית ההרצה האחרונה. אין צורך להעלות שוב את ה-CSV או להריץ מחדש שלבים שכבר הסתיימו.")
 
 m1, m2, m3 = st.columns(3)
 m1.metric("ניירות שנקלטו", len(rows))
@@ -151,6 +211,7 @@ if st.button("הרץ שלב 1 — Twelve Data + MA50 Monthly", type="primary"):
 
     st.session_state["monthly_results_v08"] = (monthly_passed, monthly_failed, monthly_no_data)
     st.session_state.pop("daily_results_v08", None)
+    save_run_state()
     progress_bar.progress(100)
     status_box.success("שלב 1 הסתיים.")
 
@@ -220,6 +281,7 @@ if "monthly_results_v08" in st.session_state:
                 daily_failed.append(merged)
 
         st.session_state["daily_results_v08"] = (final_passed, daily_failed, daily_no_data)
+        save_run_state()
         progress_bar_d.progress(100)
         status_box_d.success("שלב 2 הסתיים.")
 
