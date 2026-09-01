@@ -111,8 +111,34 @@ use_auto_finviz = st.button("🚀 משוך סינון עדכני אוטומטי�
 if use_auto_finviz:
     try:
         finviz_df = download_finviz_csv(finviz_export_url, finviz_token)
-        st.success(f"✅ Finviz חובר בהצלחה — התקבלו {len(finviz_df)} מניות")
-    except FinvizAPIError as exc:
+
+        rows = parse_finviz_csv(finviz_df.to_csv(index=False))
+        rows = list({r["Ticker"]: r for r in rows if r.get("Ticker")}.values())
+
+        current_tickers = sorted(r["Ticker"] for r in rows)
+        previous_tickers = sorted(
+            r["Ticker"] for r in st.session_state.get("source_rows_v082", [])
+        )
+
+        if current_tickers != previous_tickers:
+            st.session_state.pop("monthly_results_v08", None)
+            st.session_state.pop("daily_results_v08", None)
+
+        fund_passed, fund_failed = screen_rows(rows)
+
+        st.session_state["source_rows_v082"] = rows
+        st.session_state["fund_passed_v082"] = fund_passed
+        st.session_state["fund_failed_v082"] = fund_failed
+
+        save_run_state()
+
+        st.success(
+            f"✅ Finviz חובר בהצלחה — התקבלו {len(rows)} מניות, "
+            f"{len(fund_passed)} עברו פונדמנטלי"
+        )
+        st.rerun()
+
+    except (FinvizAPIError, ValueError) as exc:
         st.error(str(exc))
 uploaded = st.file_uploader("העלה Finviz Custom CSV", type=["csv"], accept_multiple_files=True)
 
