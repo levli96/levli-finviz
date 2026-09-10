@@ -106,19 +106,97 @@ st.markdown("""
 
 ---
 """)
-col1, col2, col3, col4 = st.columns(4)
 
-with col1:
-    st.info("### 1. Data Source\nהעלאת נתוני מניות")
+st.markdown("""
+<style>
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 20px;
+    margin-bottom: 24px;
+}
 
-with col2:
-    st.info("### 2. Fundamental\nבדיקת התנאים הפונדמנטליים")
+.dashboard-card {
+    background: linear-gradient(145deg, #182331, #101820);
+    border: 1px solid #26384a;
+    border-radius: 16px;
+    padding: 22px;
+    min-height: 125px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.20);
+}
 
-with col3:
-    st.info("### 3. MA50 Monthly\nבדיקת מגמה חודשית")
+.dashboard-card:hover {
+    border-color: #4da3ff;
+    transform: translateY(-2px);
+    transition: 0.2s ease;
+}
 
-with col4:
-    st.info("### 4. Levli Final\nתוצאות הסינון הסופי")
+.card-step {
+    color: #7f8c9a;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.card-title {
+    color: #ffffff;
+    font-size: 21px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.card-subtitle {
+    color: #9fb0c0;
+    font-size: 14px;
+}
+
+.card-status {
+    margin-top: 14px;
+    color: #4da3ff;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+@media (max-width: 900px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+</style>
+
+<div class="dashboard-grid">
+
+    <div class="dashboard-card">
+        <div class="card-step">STEP 01</div>
+        <div class="card-title">📥 Data Source</div>
+        <div class="card-subtitle">טעינת נתוני המניות למערכת</div>
+        <div class="card-status">Ready</div>
+    </div>
+
+    <div class="dashboard-card">
+        <div class="card-step">STEP 02</div>
+        <div class="card-title">📊 Fundamental</div>
+        <div class="card-subtitle">בדיקת 6 התנאים הפונדמנטליים</div>
+        <div class="card-status">Screening</div>
+    </div>
+
+    <div class="dashboard-card">
+        <div class="card-step">STEP 03</div>
+        <div class="card-title">📈 MA50 Monthly</div>
+        <div class="card-subtitle">בדיקת מגמת העלייה החודשית</div>
+        <div class="card-status">Trend Filter</div>
+    </div>
+
+    <div class="dashboard-card">
+        <div class="card-step">STEP 04</div>
+        <div class="card-title">⭐ Levli Final</div>
+        <div class="card-subtitle">המניות שעברו את כל הסינון</div>
+        <div class="card-status">Final Results</div>
+    </div>
+
+</div>
+""", unsafe_allow_html=True)
 api_key = get_api_key()
 credits = get_credits()
 
