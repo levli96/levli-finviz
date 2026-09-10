@@ -10,9 +10,15 @@ import streamlit as st
 from levli_logic import diagnostic_row, parse_finviz_csv, result_row, screen_rows
 from technical_twelvedata import screen_daily_tickers, screen_tickers, test_connection
 from finviz_api import download_finviz_csv, FinvizAPIError
-st.set_page_config(page_title="Levli Score v1.0", page_icon="⭐", layout="wide")
-STATE_FILE = Path("/tmp/levli_v082_state.json")
 
+st.set_page_config(
+    page_title="Levli Score",
+    page_icon="⭐",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+STATE_FILE = Path("/tmp/levli_v082_state.json")
 
 
 def _json_safe(value: Any) -> Any:
@@ -92,13 +98,27 @@ def get_credits() -> int:
         return 8
 
 
-st.title("Levli Score v1.0")
-st.caption("Finviz fundamentals → MA50 Monthly (~24m) → SMA50 Daily (~1y + crossings) → Levli Score")
-st.info(
-    "v1.0 שומרת אוטומטית את תוצאות הסינון Monthly ו-Daily, כך שרענון/Reset לא מחייב להתחיל מחדש. "
-    "Industry וכללי הסינון נשארו ללא שינוי."
-)
+st.markdown("""
+# ⭐ Levli Score
+### Stock Screening System
 
+**Fundamental → MA50 Monthly → SMA50 Daily → Levli Score**
+
+---
+""")
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.info("### 1. Data Source\nהעלאת נתוני מניות")
+
+with col2:
+    st.info("### 2. Fundamental\nבדיקת התנאים הפונדמנטליים")
+
+with col3:
+    st.info("### 3. MA50 Monthly\nבדיקת מגמה חודשית")
+
+with col4:
+    st.info("### 4. Levli Final\nתוצאות הסינון הסופי")
 api_key = get_api_key()
 credits = get_credits()
 
