@@ -268,10 +268,24 @@ else:
         st.stop()
     st.success("שוחזרה אוטומטית ההרצה האחרונה. אין צורך להעלות שוב את ה-CSV או להריץ מחדש שלבים שכבר הסתיימו.")
 
-m1, m2, m3 = st.columns(3)
-m1.metric("ניירות שנקלטו", len(rows))
-m2.metric("עברו פונדמנטלי", len(fund_passed))
-m3.metric("נפסלו פונדמנטלית", len(fund_failed))
+st.markdown("### 📊 Screening Overview")
+
+k1, k2, k3 = st.columns(3)
+
+k1.metric(
+    label="Stocks Loaded",
+    value=len(rows),
+)
+
+k2.metric(
+    label="Fundamental Pass",
+    value=len(fund_passed),
+)
+
+k3.metric(
+    label="Fundamental Rejected",
+    value=len(fund_failed),
+)
 
 # ---------------- Monthly stage ----------------
 st.subheader("שלב 1 — MA50 Monthly")
