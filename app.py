@@ -237,7 +237,14 @@ if use_auto_finviz:
 
     except (FinvizAPIError, ValueError) as exc:
         st.error(str(exc))
-uploaded = st.file_uploader("העלה Finviz Custom CSV", type=["csv"], accept_multiple_files=True)
+st.markdown("## 📥 Data Source")
+st.caption("העלה קובץ Finviz CSV כדי להתחיל את הסינון")        
+uploaded = st.file_uploader(
+    "Upload Finviz CSV",
+    type=["csv"],
+    accept_multiple_files=True,
+    label_visibility="collapsed",
+)
 
 if uploaded:
     rows: list[dict[str, Any]] = []
