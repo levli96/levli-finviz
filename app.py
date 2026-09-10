@@ -107,8 +107,7 @@ st.markdown("""
 ---
 """)
 
-st.markdown("""
-<style>
+st.html("""<style>
 .dashboard-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -196,7 +195,7 @@ st.markdown("""
     </div>
 
 </div>
-""", unsafe_allow_html=True)
+""")
 api_key = get_api_key()
 credits = get_credits()
 
