@@ -237,14 +237,20 @@ if use_auto_finviz:
 
     except (FinvizAPIError, ValueError) as exc:
         st.error(str(exc))
-st.markdown("## 📥 Data Source")
-st.caption("העלה קובץ Finviz CSV כדי להתחיל את הסינון")        
-uploaded = st.file_uploader(
-    "Upload Finviz CSV",
-    type=["csv"],
-    accept_multiple_files=True,
-    label_visibility="collapsed",
-)
+st.markdown("### 📥 Load Market Data")
+
+upload_col, status_col = st.columns([3, 1])
+
+with upload_col:
+    uploaded = st.file_uploader(
+        "Upload Finviz CSV",
+        type=["csv"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+    )
+
+with status_col:
+    st.metric("DATA SOURCE", "CSV")
 
 if uploaded:
     rows: list[dict[str, Any]] = []
