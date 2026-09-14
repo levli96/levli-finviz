@@ -612,7 +612,7 @@ if "daily_results_v08" in st.session_state:
             with st.expander("לא התקבלו מספיק נתונים יומיים מ-Twelve Data"):
                 table(daily_no_data, ["Ticker", "Company", "Industry", "Daily Status", "Daily Points"])
 
-    with st.expander("נפסלו בשלב Monthly והסיבה"):
+with st.expander("נפסלו בשלב Monthly והסיבה"):
         table(monthly_failed, [
             "Ticker", "Company", "Industry", "Technical Status", "Monthly Points", "MA50 Start", "MA50 Now",
             "MA50 Change %", "MA50 Up Months", "Monthly Close",
