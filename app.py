@@ -289,27 +289,70 @@ daily_results = st.session_state.get("daily_results_v08", [])
 monthly_passed = [r for r in monthly_results if r.get("Passed")]
 final_passed = [r for r in daily_results if r.get("Passed")]
 
-k1, k2, k3, k4 = st.columns(4)
+st.html(f"""
+<style>
+.kpi-grid {{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin: 12px 0 28px 0;
+}}
 
-k1.metric(
-    label="Stocks Loaded",
-    value=len(rows),
-)
+.kpi-card {{
+    background: #141e29;
+    border: 1px solid #2a3b4d;
+    border-radius: 14px;
+    padding: 18px 20px;
+}}
 
-k2.metric(
-    label="Fundamental Pass",
-    value=len(fund_passed),
-)
+.kpi-label {{
+    color: #8fa3b8;
+    font-size: 13px;
+    font-weight: 600;
+}}
 
-k3.metric(
-    label="MA50 Monthly",
-    value=len(monthly_passed),
-)
+.kpi-value {{
+    color: white;
+    font-size: 34px;
+    font-weight: 700;
+    margin-top: 6px;
+}}
 
-k4.metric(
-    label="Levli Final",
-    value=len(final_passed),
-)
+.kpi-final {{
+    border-color: #c7a52b;
+}}
+
+@media (max-width: 900px) {{
+    .kpi-grid {{
+        grid-template-columns: repeat(2, 1fr);
+    }}
+}}
+</style>
+
+<div class="kpi-grid">
+
+<div class="kpi-card">
+    <div class="kpi-label">STOCKS LOADED</div>
+    <div class="kpi-value">{len(rows)}</div>
+</div>
+
+<div class="kpi-card">
+    <div class="kpi-label">FUNDAMENTAL PASS</div>
+    <div class="kpi-value">{len(fund_passed)}</div>
+</div>
+
+<div class="kpi-card">
+    <div class="kpi-label">MA50 MONTHLY</div>
+    <div class="kpi-value">{len(monthly_passed)}</div>
+</div>
+
+<div class="kpi-card kpi-final">
+    <div class="kpi-label">⭐ LEVLI FINAL</div>
+    <div class="kpi-value">{len(final_passed)}</div>
+</div>
+
+</div>
+""")
 
 # ---------------- Monthly stage ----------------
 st.subheader("שלב 1 — MA50 Monthly")
