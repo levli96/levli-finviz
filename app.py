@@ -283,11 +283,11 @@ else:
 
 st.markdown("### 📊 Screening Overview")
 
-monthly_results = st.session_state.get("monthly_results_v08", [])
-daily_results = st.session_state.get("daily_results_v08", [])
+monthly_results = st.session_state.get("monthly_results_v08", ([], [], []))
+daily_results = st.session_state.get("daily_results_v08", ([], [], []))
 
-monthly_passed = [r for r in monthly_results if r.get("Passed")]
-final_passed = [r for r in daily_results if r.get("Passed")]
+monthly_passed = monthly_results[0] if monthly_results else []
+final_passed = daily_results[0] if daily_results else []
 
 st.html(f"""
 <style>
