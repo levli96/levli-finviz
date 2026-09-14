@@ -283,7 +283,13 @@ else:
 
 st.markdown("### 📊 Screening Overview")
 
-k1, k2, k3 = st.columns(3)
+monthly_results = st.session_state.get("monthly_results_v08", [])
+daily_results = st.session_state.get("daily_results_v08", [])
+
+monthly_passed = [r for r in monthly_results if r.get("Passed")]
+final_passed = [r for r in daily_results if r.get("Passed")]
+
+k1, k2, k3, k4 = st.columns(4)
 
 k1.metric(
     label="Stocks Loaded",
@@ -296,8 +302,13 @@ k2.metric(
 )
 
 k3.metric(
-    label="Fundamental Rejected",
-    value=len(fund_failed),
+    label="MA50 Monthly",
+    value=len(monthly_passed),
+)
+
+k4.metric(
+    label="Levli Final",
+    value=len(final_passed),
 )
 
 # ---------------- Monthly stage ----------------
