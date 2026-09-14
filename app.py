@@ -510,7 +510,7 @@ st.html(f"""
     </div>
 """)
 
-    if st.button("הרץ שלב 2 — SMA50 Daily + לפחות 5 חציות", type="primary"):
+if st.button("הרץ שלב 2 — SMA50 Daily + לפחות 5 חציות", type="primary"):
         progress_bar_d = st.progress(0)
         status_box_d = st.empty()
 
