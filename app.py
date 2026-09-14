@@ -618,7 +618,7 @@ with st.expander("נפסלו בשלב Monthly והסיבה"):
             "MA50 Change %", "MA50 Up Months", "Monthly Close",
         ])
 
-    if monthly_no_data:
+if monthly_no_data:
         with st.expander("לא התקבלו מספיק נתונים חודשיים מ-Twelve Data"):
             table(monthly_no_data, ["Ticker", "Company", "Industry", "Technical Status", "Monthly Points"])
 
