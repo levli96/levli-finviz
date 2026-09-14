@@ -546,11 +546,11 @@ if st.button("הרץ שלב 2 — SMA50 Daily + לפחות 5 חציות", type="
                 final_passed.append(merged)
             else:
                 daily_failed.append(merged)
-    st.session_state["daily_results_v08"] = (final_passed, daily_failed, daily_no_data)
-    save_run_state()
-    progress_bar_d.progress(100)
-    status_box_d.success("שלב 2 הסתיים.")
-    st.rerun()       
+        st.session_state["daily_results_v08"] = (final_passed, daily_failed, daily_no_data)
+        save_run_state()
+        progress_bar_d.progress(100)
+        status_box_d.success("שלב 2 הסתיים.")
+        st.rerun()       
 if "daily_results_v08" in st.session_state:
         final_passed, daily_failed, daily_no_data = st.session_state["daily_results_v08"]
         x, y, z = st.columns(3)
