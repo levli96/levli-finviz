@@ -461,20 +461,54 @@ if "monthly_results_v08" in st.session_state:
             "MA50 Up Months", "Monthly Close", "Technical Status",
         ])
 
-    # ---------------- Daily stage ----------------
-    st.subheader("שלב 2 — SMA50 Daily")
-    st.caption(
-        "נבדקות רק המניות שעברו Monthly. החלון הוא כ-252 ימי מסחר. "
-        "SMA50 חייב להיות גבוה יותר מאשר בתחילת החלון ובשיפוע לינארי חיובי; "
-        "המחיר הנוכחי חייב להיות מעל/נוגע ב-SMA50; ונדרשות לפחות 5 חציות מאושרות. "
-        "חציה נספרת רק אחרי 2 ימי מסחר רצופים בצד החדש של SMA50 כדי לצמצם רעש."
-    )
+  # ---------------- Daily stage ----------------
+daily_est = max(0, (len(monthly_passed) - 1) // credits)
 
-    daily_est = max(0, (len(monthly_passed) - 1) // credits)
-    st.warning(
-        f"שלב Daily ירוץ על {len(monthly_passed)} מניות בלבד. במכסה של {credits} מניות בדקה, "
-        f"הוא עשוי לקחת בערך {daily_est} דקות."
-    )
+st.html(f"""
+    <div style="
+        background:#141c29;
+        border:1px solid #26384a;
+        border-radius:14px;
+        padding:20px 24px;
+        margin-top:22px;
+        margin-bottom:14px;
+    ">
+        <div style="font-size:12px;color:#7f93a8;font-weight:700;">
+            STEP 2 · TECHNICAL SCREENING
+        </div>
+
+        <div style="font-size:24px;color:white;font-weight:700;margin-top:6px;">
+            📈 SMA50 Daily
+        </div>
+
+        <div style="color:#9fb0c0;margin-top:8px;">
+            בדיקת מגמה יומית לאורך כשנה + לפחות 5 חציות מאושרות של SMA50
+        </div>
+
+        <div style="display:flex;gap:40px;margin-top:20px;">
+            <div>
+                <div style="font-size:12px;color:#7f93a8;">STOCKS TO CHECK</div>
+                <div style="font-size:26px;font-weight:700;color:white;">
+                    {len(monthly_passed)}
+                </div>
+            </div>
+
+            <div>
+                <div style="font-size:12px;color:#7f93a8;">ESTIMATED TIME</div>
+                <div style="font-size:26px;font-weight:700;color:white;">
+                    ~{daily_est} min
+                </div>
+            </div>
+
+            <div>
+                <div style="font-size:12px;color:#7f93a8;">DATA SOURCE</div>
+                <div style="font-size:18px;font-weight:700;color:#4da3ff;">
+                    Twelve Data
+                </div>
+            </div>
+        </div>
+    </div>
+""")
 
     if st.button("הרץ שלב 2 — SMA50 Daily + לפחות 5 חציות", type="primary"):
         progress_bar_d = st.progress(0)
