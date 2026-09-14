@@ -355,19 +355,53 @@ st.html(f"""
 """)
 
 # ---------------- Monthly stage ----------------
-st.subheader("שלב 1 — MA50 Monthly")
-st.caption(
-    "MA50 היום גבוה מתחילת חלון 24 החודשים, שיפוע לינארי חיובי, לפחות 18 מתוך 23 השינויים "
-    "החודשיים ב-MA50 אינם שליליים, והמחיר החודשי האחרון מעל/נוגע ב-MA50."
-)
-
 monthly_est = max(0, (len(fund_passed) - 1) // credits)
-st.warning(
-    f"מכסת Twelve Data מוגדרת ל-{credits} מניות בדקה. עבור {len(fund_passed)} מועמדות, "
-    f"השלב החודשי עשוי לקחת בערך {monthly_est} דקות."
-)
 
-if st.button("הרץ שלב 1 — Twelve Data + MA50 Monthly", type="primary"):
+st.html(f"""
+<div style="
+    background:#141e29;
+    border:1px solid #2a3b4d;
+    border-radius:16px;
+    padding:22px 24px;
+    margin:18px 0 14px 0;
+">
+    <div style="font-size:13px;color:#7f93a8;font-weight:600;">
+        STEP 1 · TECHNICAL SCREENING
+    </div>
+
+    <div style="font-size:24px;color:white;font-weight:700;margin-top:6px;">
+        📈 MA50 Monthly
+    </div>
+
+    <div style="color:#9fb0c0;margin-top:8px;">
+        בדיקת מגמת עלייה חודשית באמצעות MA50 לאורך כ־24 חודשים
+    </div>
+
+    <div style="display:flex;gap:40px;margin-top:20px;">
+        <div>
+            <div style="font-size:12px;color:#7f93a8;">STOCKS TO CHECK</div>
+            <div style="font-size:26px;font-weight:700;color:white;">
+                {len(fund_passed)}
+            </div>
+        </div>
+
+        <div>
+            <div style="font-size:12px;color:#7f93a8;">ESTIMATED TIME</div>
+            <div style="font-size:26px;font-weight:700;color:white;">
+                ~{monthly_est} min
+            </div>
+        </div>
+
+        <div>
+            <div style="font-size:12px;color:#7f93a8;">DATA SOURCE</div>
+            <div style="font-size:18px;font-weight:700;color:#4da3ff;">
+                Twelve Data
+            </div>
+        </div>
+    </div>
+</div>
+""")
+if st.button("▶ הרץ MA50 Monthly", type="primary"):
     if not api_key:
         st.error("TWELVE_DATA_API_KEY לא נמצא ב-Streamlit Secrets.")
         st.stop()
