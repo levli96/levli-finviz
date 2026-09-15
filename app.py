@@ -612,7 +612,7 @@ if "daily_results_v08" in st.session_state:
                 table(daily_no_data, ["Ticker", "Company", "Industry", "Daily Status", "Daily Points"])
 
 with st.expander("נפסלו בשלב Monthly והסיבה"):
-        table(monthly_failed, [
+        table(st.session_state["monthly_results_v08"][1], [
             "Ticker", "Company", "Industry", "Technical Status", "Monthly Points", "MA50 Start", "MA50 Now",
             "MA50 Change %", "MA50 Up Months", "Monthly Close",
         ])
