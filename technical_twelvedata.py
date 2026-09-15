@@ -160,7 +160,7 @@ def analyze_daily_sma50(close: pd.Series) -> dict[str, Any]:
    else:
         status = f"עבר: SMA50 יומי עולה ~שנה, המחיר מעל/נוגע בו, ו-{crossings} חציות מאושרות"
 
-    return {
+   return {
         "Daily Pass": passed,
         "Daily Status": status,
         "Daily Points": int(len(close)),
