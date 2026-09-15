@@ -617,10 +617,9 @@ with st.expander("נפסלו בשלב Monthly והסיבה"):
             "MA50 Change %", "MA50 Up Months", "Monthly Close",
         ])
 
-if monthly_no_data:
+if st.session_state.get("monthly_results_v08", ([], [], []))[2]:
         with st.expander("לא התקבלו מספיק נתונים חודשיים מ-Twelve Data"):
-            table(monthly_no_data, ["Ticker", "Company", "Industry", "Technical Status", "Monthly Points"])
-
+            table(st.session_state.get("monthly_results_v08", ([], [], []))[2], ["Ticker", "Company", "Industry", "Technical Status", "Monthly Points"])
 with st.expander("נפסלו פונדמנטלית והסיבה"):
     table([diagnostic_row(r) for r in fund_failed], ["Ticker", "Company", "Industry", "Failed Criteria"])
 
