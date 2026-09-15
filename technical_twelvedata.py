@@ -17,9 +17,10 @@ MONTHLY_OUTPUTSIZE = 80
 # Daily stage
 DAILY_SMA_DAYS = 50
 DAILY_TREND_DAYS = 252  # approximately one trading year
-DAILY_OUTPUTSIZE = 330  # 50-day SMA warm-up + one-year analysis window + margin
+DAILY_OUTPUTSIZE = 330  # SMA warm-up + one-year analysis window + margin
 MIN_DAILY_CROSSINGS = 5
 CROSS_CONFIRM_DAYS = 2
+RECENT_TREND_DAYS = 63  # approximately 3 trading months
 
 API_URL = "https://api.twelvedata.com/time_series"
 
@@ -79,12 +80,7 @@ def analyze_monthly_ma50(close: pd.Series) -> dict[str, Any]:
 
 
 def _confirmed_crossings(diff: pd.Series, confirm_days: int = CROSS_CONFIRM_DAYS) -> int:
-    """Count confirmed price/SMA crossings.
-
-    A side change is counted only after `confirm_days` consecutive closes on the
-    new side of SMA50. This avoids counting a one-day touch/noise as a crossing.
-    Equality is treated as above/touching the SMA50.
-    """
+    """Count confirmed price/SMA crossings."""
     diff = pd.to_numeric(diff, errors="coerce").dropna()
     if len(diff) < confirm_days:
         return 0
@@ -134,18 +130,23 @@ def analyze_daily_sma50(close: pd.Series) -> dict[str, Any]:
     sma = trend["SMA50"]
     x = np.arange(len(sma), dtype=float)
     slope = float(np.polyfit(x, sma.to_numpy(dtype=float), 1)[0])
+
     start = float(sma.iloc[0])
     now = float(sma.iloc[-1])
     last_close = float(trend["Close"].iloc[-1])
     change_pct = ((now / start) - 1.0) * 100.0 if start else None
     distance_pct = ((last_close / now) - 1.0) * 100.0 if now else None
+
     diff = trend["Close"] - trend["SMA50"]
     crossings = _confirmed_crossings(diff)
     days_above_pct = float((diff >= 0).mean() * 100.0)
 
     trend_ok = now > start and slope > 0
-    recent_start = float(sma.iloc[-63])
+
+    recent_index = max(0, len(sma) - RECENT_TREND_DAYS)
+    recent_start = float(sma.iloc[recent_index])
     recent_trend_ok = now > recent_start
+
     price_ok = last_close >= now
     crossings_ok = crossings >= MIN_DAILY_CROSSINGS
     passed = trend_ok and recent_trend_ok and price_ok and crossings_ok
@@ -159,9 +160,12 @@ def analyze_daily_sma50(close: pd.Series) -> dict[str, Any]:
     elif not crossings_ok:
         status = f"פחות מ-{MIN_DAILY_CROSSINGS} חציות מאושרות של המחיר מול SMA50 בשנה"
     else:
-        status = f"עבר: SMA50 יומי עולה ~שנה, המחיר מעל/נוגע בו, ו-{crossings} חציות מאושרות"
+        status = (
+            f"עבר: SMA50 יומי עולה ~שנה וגם ב-3 החודשים האחרונים, "
+            f"המחיר מעל/נוגע בו, ו-{crossings} חציות מאושרות"
+        )
 
-   return {
+    return {
         "Daily Pass": passed,
         "Daily Status": status,
         "Daily Points": int(len(close)),
@@ -178,6 +182,7 @@ def analyze_daily_sma50(close: pd.Series) -> dict[str, Any]:
 def _series_from_payload(payload: dict[str, Any]) -> pd.Series:
     if not isinstance(payload, dict):
         return pd.Series(dtype="float64")
+
     values = payload.get("values")
     if not isinstance(values, list) or not values:
         return pd.Series(dtype="float64")
@@ -192,9 +197,14 @@ def _series_from_payload(payload: dict[str, Any]) -> pd.Series:
             points.append((dt, close))
         except (TypeError, ValueError):
             continue
+
     if not points:
         return pd.Series(dtype="float64")
-    return pd.Series({dt: close for dt, close in points}, dtype="float64").sort_index()
+
+    return pd.Series(
+        {dt: close for dt, close in points},
+        dtype="float64",
+    ).sort_index()
 
 
 def _error_message(payload: Any, status_code: int | None = None) -> str:
@@ -207,7 +217,13 @@ def _error_message(payload: Any, status_code: int | None = None) -> str:
 
 def test_connection(api_key: str, ticker: str = "AAPL") -> dict[str, Any]:
     if not api_key:
-        return {"ok": False, "ticker": ticker, "points": 0, "error": "TWELVE_DATA_API_KEY חסר ב-Streamlit Secrets"}
+        return {
+            "ok": False,
+            "ticker": ticker,
+            "points": 0,
+            "error": "TWELVE_DATA_API_KEY חסר ב-Streamlit Secrets",
+        }
+
     params = {
         "symbol": td_symbol(ticker),
         "interval": "1month",
@@ -215,13 +231,24 @@ def test_connection(api_key: str, ticker: str = "AAPL") -> dict[str, Any]:
         "format": "JSON",
         "apikey": api_key,
     }
+
     try:
         r = requests.get(API_URL, params=params, timeout=30)
         payload = r.json()
     except requests.RequestException as exc:
-        return {"ok": False, "ticker": ticker, "points": 0, "error": f"שגיאת רשת: {exc.__class__.__name__}"}
+        return {
+            "ok": False,
+            "ticker": ticker,
+            "points": 0,
+            "error": f"שגיאת רשת: {exc.__class__.__name__}",
+        }
     except ValueError:
-        return {"ok": False, "ticker": ticker, "points": 0, "error": "Twelve Data החזיר תשובה שאינה JSON"}
+        return {
+            "ok": False,
+            "ticker": ticker,
+            "points": 0,
+            "error": "Twelve Data החזיר תשובה שאינה JSON",
+        }
 
     s = _series_from_payload(payload)
     if r.ok and len(s):
@@ -233,7 +260,13 @@ def test_connection(api_key: str, ticker: str = "AAPL") -> dict[str, Any]:
             "last": str(s.index.max().date()),
             "last_close": float(s.iloc[-1]),
         }
-    return {"ok": False, "ticker": ticker, "points": 0, "error": _error_message(payload, r.status_code)}
+
+    return {
+        "ok": False,
+        "ticker": ticker,
+        "points": 0,
+        "error": _error_message(payload, r.status_code),
+    }
 
 
 def _fetch_batch(
@@ -244,6 +277,7 @@ def _fetch_batch(
 ) -> tuple[dict[str, pd.Series], str | None, bool]:
     mapping = {t: td_symbol(t) for t in originals}
     symbols = list(dict.fromkeys(mapping.values()))
+
     params = {
         "symbol": ",".join(symbols),
         "interval": interval,
@@ -251,6 +285,7 @@ def _fetch_batch(
         "format": "JSON",
         "apikey": api_key,
     }
+
     try:
         r = requests.get(API_URL, params=params, timeout=45)
         payload = r.json()
@@ -263,6 +298,7 @@ def _fetch_batch(
         return {}, _error_message(payload, r.status_code), True
 
     out: dict[str, pd.Series] = {}
+
     if len(symbols) == 1:
         out[originals[0]] = _series_from_payload(payload)
         if not r.ok and not len(out[originals[0]]):
@@ -275,6 +311,7 @@ def _fetch_batch(
 
     if not r.ok:
         return out, _error_message(payload, r.status_code), False
+
     return out, None, False
 
 
@@ -288,9 +325,13 @@ def _screen_tickers_generic(
     credits_per_minute: int = 8,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], str | None]:
-    clean = list(dict.fromkeys(t.strip().upper() for t in tickers if t and t.strip()))
+    clean = list(
+        dict.fromkeys(t.strip().upper() for t in tickers if t and t.strip())
+    )
+
     if not clean:
         return {}, None
+
     if not api_key:
         return {}, "TWELVE_DATA_API_KEY חסר ב-Streamlit Secrets"
 
@@ -300,15 +341,35 @@ def _screen_tickers_generic(
 
     for bi in range(total_batches):
         batch = clean[bi * batch_size : (bi + 1) * batch_size]
-        if progress:
-            progress(bi, total_batches, f"מוריד קבוצה {bi + 1}/{total_batches} ({len(batch)} מניות)")
 
-        series_map, err, rate_limited = _fetch_batch(api_key, batch, interval, outputsize)
+        if progress:
+            progress(
+                bi,
+                total_batches,
+                f"מוריד קבוצה {bi + 1}/{total_batches} ({len(batch)} מניות)",
+            )
+
+        series_map, err, rate_limited = _fetch_batch(
+            api_key,
+            batch,
+            interval,
+            outputsize,
+        )
+
         if rate_limited:
             if progress:
-                progress(bi, total_batches, "ממתין לאיפוס מכסת Twelve Data…")
+                progress(
+                    bi,
+                    total_batches,
+                    "ממתין לאיפוס מכסת Twelve Data…",
+                )
             time.sleep(61)
-            series_map, err, rate_limited = _fetch_batch(api_key, batch, interval, outputsize)
+            series_map, err, rate_limited = _fetch_batch(
+                api_key,
+                batch,
+                interval,
+                outputsize,
+            )
 
         if err and not series_map:
             return results, f"Twelve Data: {err}"
@@ -319,11 +380,16 @@ def _screen_tickers_generic(
 
         if bi < total_batches - 1:
             if progress:
-                progress(bi + 1, total_batches, "ממתין למכסה של הדקה הבאה…")
+                progress(
+                    bi + 1,
+                    total_batches,
+                    "ממתין למכסה של הדקה הבאה…",
+                )
             time.sleep(61)
 
     if progress:
         progress(total_batches, total_batches, "הבדיקה הסתיימה")
+
     return results, None
 
 
@@ -361,7 +427,7 @@ def screen_daily_tickers(
     credits_per_minute: int = 8,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], str | None]:
-    """Daily Levli stage: rising SMA50 over ~1 trading year + current price >= SMA50 + >=5 confirmed crossings."""
+    """Daily Levli stage."""
     return _screen_tickers_generic(
         tickers=tickers,
         api_key=api_key,
