@@ -144,15 +144,18 @@ def analyze_daily_sma50(close: pd.Series) -> dict[str, Any]:
     days_above_pct = float((diff >= 0).mean() * 100.0)
 
     trend_ok = now > start and slope > 0
+    recent_start = float(sma.iloc[-63])
+recent_trend_ok = now > recent_start
     price_ok = last_close >= now
     crossings_ok = crossings >= MIN_DAILY_CROSSINGS
-    passed = trend_ok and price_ok and crossings_ok
-
-    if not trend_ok:
-        status = "SMA50 יומי אינו במגמת עלייה לאורך ~שנת מסחר"
-    elif not price_ok:
-        status = "SMA50 היומי עולה, אך המחיר הנוכחי מתחת ל-SMA50"
-    elif not crossings_ok:
+    passed = trend_ok and recent_trend_ok and price_ok and crossings_ok
+   if not trend_ok:
+    status = "SMA50 אינו במגמת עלייה לאורך שנה"
+elif not recent_trend_ok:
+    status = "SMA50 אינו במגמת עלייה ב-3 החודשים האחרונים"
+elif not price_ok:
+    status = "המחיר מתחת ל-SMA50"
+elif not crossings_ok:
         status = f"פחות מ-{MIN_DAILY_CROSSINGS} חציות מאושרות של המחיר מול SMA50 בשנה"
     else:
         status = f"עבר: SMA50 יומי עולה ~שנה, המחיר מעל/נוגע בו, ו-{crossings} חציות מאושרות"
